@@ -106,6 +106,10 @@ extern "C" void app_main(void)
     assert(camera != nullptr && "Failed to create camera");
     assert((phone->installApp(camera) >= 0) && "Failed to begin camera");
 
+    TestApp *test_app = new TestApp();
+    assert(test_app != nullptr && "Failed to create test_app");
+    assert((phone->installApp(test_app) >= 0) && "Failed to begin test_app");
+
 #if CONFIG_EXAMPLE_ENABLE_SD_CARD
     ESP_LOGW(TAG, "Using Video Player example requires inserting the SD card in advance and saving an MJPEG format video on the SD card");
     AppVideoPlayer *app_video_player = new AppVideoPlayer();
