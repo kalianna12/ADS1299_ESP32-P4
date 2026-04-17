@@ -76,8 +76,8 @@ bool SSVEPApp::run(void)
     lv_obj_set_style_pad_all(_app_area, 0, 0);
     lv_obj_clear_flag(_app_area, LV_OBJ_FLAG_SCROLLABLE);
     
-    // 计算方块大小（约占宽度的1/3）
-    _rect_size = (_app_width / 3) - 20;
+    // 计算方块大小（约占宽度的1/6，缩小一倍）
+    _rect_size = ((_app_width / 3) - 20) / 2;
     
     // 创建四个角的闪烁方框
     createRectangles(_app_area);
