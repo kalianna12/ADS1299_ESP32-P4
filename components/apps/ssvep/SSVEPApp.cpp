@@ -13,8 +13,8 @@
 static const char *TAG = "SSVEPApp";
 
 // 频率配置表
-static constexpr const uint16_t FREQ_HZ[SSVEP_FREQ_NUM] = {8, 10, 12, 16};
-static constexpr const uint16_t FREQ_PERIOD_MS[SSVEP_FREQ_NUM] = {125, 100, 83, 62};  // 1000/freq，单位ms
+static constexpr const uint16_t FREQ_HZ[SSVEP_FREQ_NUM] = {8, 10, 12, 14};
+static constexpr const uint16_t FREQ_PERIOD_MS[SSVEP_FREQ_NUM] = {125, 100, 83, 71};  // 1000/freq，单位ms
 
 // 灰度查表大小（128个采样点，覆盖一个完整周期）
 static constexpr const uint16_t GRAYSCALE_TABLE_SIZE = 128;
@@ -34,6 +34,7 @@ SSVEPApp::SSVEPApp():
     std::memset(_freq_tables, 0, sizeof(_freq_tables));
     std::memset(_rects, 0, sizeof(_rects));
     std::memset(_feedback_rects, 0, sizeof(_feedback_rects));
+    std::memset(_test_buttons, 0, sizeof(_test_buttons));
 }
 
 SSVEPApp::~SSVEPApp()
@@ -84,6 +85,9 @@ bool SSVEPApp::run(void)
     
     // 创建回显区域
     createFeedbackArea(_app_area);
+    
+    // 创建测试按钮
+    createTestButtons(_app_area);
     
     // 启动更新任务
     _task_running = true;
@@ -183,7 +187,7 @@ void SSVEPApp::createRectangles(lv_obj_t *parent)
         {LV_ALIGN_TOP_LEFT, 10, 10, SSVEP_FREQ_8HZ},      // 左上 - 8Hz
         {LV_ALIGN_TOP_RIGHT, -10, 10, SSVEP_FREQ_10HZ},   // 右上 - 10Hz
         {LV_ALIGN_BOTTOM_LEFT, 10, -10, SSVEP_FREQ_12HZ}, // 左下 - 12Hz
-        {LV_ALIGN_BOTTOM_RIGHT, -10, -10, SSVEP_FREQ_16HZ} // 右下 - 16Hz
+        {LV_ALIGN_BOTTOM_RIGHT, -10, -10, SSVEP_FREQ_14HZ} // 右下 - 14Hz
     };
     
     uint32_t current_ms = esp_timer_get_time() / 1000;
@@ -230,12 +234,80 @@ void SSVEPApp::createFeedbackArea(lv_obj_t *parent)
     
     // 创建频率信息标签
     lv_obj_t *freq_label = lv_label_create(parent);
-    lv_label_set_text(freq_label, "8Hz  10Hz  12Hz  16Hz");
+    lv_label_set_text(freq_label, "8Hz  10Hz  12Hz  14Hz");
     lv_obj_set_style_text_color(freq_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(freq_label, &lv_font_montserrat_16, 0);
     lv_obj_align(freq_label, LV_ALIGN_CENTER, 0, 20);
     
     ESP_LOGI(TAG, "Feedback area created");
+}
+
+void SSVEPApp::createTestButtons(lv_obj_t *parent)
+{
+    ESP_LOGI(TAG, "Creating test buttons...");
+    
+    // 按钮配置
+    const char *button_labels[SSVEP_FREQ_NUM] = {"8Hz", "10Hz", "12Hz", "14Hz"};
+    lv_color_t button_colors[SSVEP_FREQ_NUM] = {
+        lv_color_hex(0x4CAF50),  // 绿色 - 8Hz
+        lv_color_hex(0x2196F3),  // 蓝色 - 10Hz
+        lv_color_hex(0xFF9800),  // 橙色 - 12Hz
+        lv_color_hex(0xF44336)   // 红色 - 14Hz
+    };
+    
+    // 创建四个测试按钮，排列在底部
+    for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
+        _test_buttons[i] = lv_btn_create(parent);
+        lv_obj_set_size(_test_buttons[i], 80, 40);
+        
+        // 水平排列在底部
+        int x_offset = (i - 1.5) * 90;  // -135, -45, 45, 135
+        lv_obj_align(_test_buttons[i], LV_ALIGN_BOTTOM_MID, x_offset, -20);
+        
+        // 设置按钮样式
+        lv_obj_set_style_bg_color(_test_buttons[i], button_colors[i], 0);
+        lv_obj_set_style_border_width(_test_buttons[i], 2, 0);
+        lv_obj_set_style_border_color(_test_buttons[i], lv_color_hex(0x333333), 0);
+        lv_obj_set_style_radius(_test_buttons[i], 8, 0);
+        
+        // 创建按钮标签
+        lv_obj_t *label = lv_label_create(_test_buttons[i]);
+        lv_label_set_text(label, button_labels[i]);
+        lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+        lv_obj_center(label);
+        
+        // 设置事件处理
+        lv_obj_add_event_cb(_test_buttons[i], testButtonEventHandler, LV_EVENT_CLICKED, this);
+        
+        // 在按钮的用户数据中存储频率索引
+        lv_obj_set_user_data(_test_buttons[i], (void*)(uintptr_t)i);
+        
+        ESP_LOGI(TAG, "Test button %d created for %s", i, button_labels[i]);
+    }
+    
+    ESP_LOGI(TAG, "Test buttons created");
+}
+
+void SSVEPApp::testButtonEventHandler(lv_event_t *e)
+{
+    lv_obj_t *btn = lv_event_get_target(e);
+    SSVEPApp *app = static_cast<SSVEPApp*>(lv_event_get_user_data(e));
+    
+    if (app == nullptr) {
+        return;
+    }
+    
+    // 获取按钮对应的频率索引
+    uintptr_t freq_idx = (uintptr_t)lv_obj_get_user_data(btn);
+    if (freq_idx >= SSVEP_FREQ_NUM) {
+        return;
+    }
+    
+    // 触发对应频率的反馈
+    app->setFeedback((ssvep_freq_t)freq_idx);
+    
+    ESP_LOGI(TAG, "Test button clicked for frequency %d Hz", FREQ_HZ[freq_idx]);
 }
 
 uint8_t SSVEPApp::getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms)

@@ -16,7 +16,7 @@ typedef enum {
     SSVEP_FREQ_8HZ = 0,
     SSVEP_FREQ_10HZ = 1,
     SSVEP_FREQ_12HZ = 2,
-    SSVEP_FREQ_16HZ = 3,
+    SSVEP_FREQ_14HZ = 3,
     SSVEP_FREQ_NUM = 4
 } ssvep_freq_t;
 
@@ -58,6 +58,7 @@ private:
     
     // 回显区域
     lv_obj_t *_feedback_rects[SSVEP_FREQ_NUM];  // 用于回显的方框
+    lv_obj_t *_test_buttons[SSVEP_FREQ_NUM];    // 测试按钮
     
     // FreeRTOS任务
     TaskHandle_t _update_task;
@@ -76,6 +77,7 @@ private:
     void initGrayscaleTables(void);
     void createRectangles(lv_obj_t *parent);
     void createFeedbackArea(lv_obj_t *parent);
+    void createTestButtons(lv_obj_t *parent);
     uint8_t getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms);
     void updateAllRectangles(uint32_t current_ms);
     void setFeedback(ssvep_freq_t detected_freq);  // 用于设置检测到的频率反馈
@@ -86,6 +88,9 @@ private:
     
     // 颜色计算
     lv_color_t grayscaleToColor(uint8_t value);
+    
+    // 事件处理
+    static void testButtonEventHandler(lv_event_t *e);
     
 private:
     ssvep_freq_t _feedback_freq;  // 检测到的频率反馈
