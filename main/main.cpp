@@ -110,6 +110,10 @@ extern "C" void app_main(void)
     assert(test_app != nullptr && "Failed to create test_app");
     assert((phone->installApp(test_app) >= 0) && "Failed to begin test_app");
 
+    SSVEPApp *ssvep_app = new SSVEPApp();
+    assert(ssvep_app != nullptr && "Failed to create ssvep_app");
+    assert((phone->installApp(ssvep_app) >= 0) && "Failed to begin ssvep_app");
+
 #if CONFIG_EXAMPLE_ENABLE_SD_CARD
     ESP_LOGW(TAG, "Using Video Player example requires inserting the SD card in advance and saving an MJPEG format video on the SD card");
     AppVideoPlayer *app_video_player = new AppVideoPlayer();

@@ -8,3 +8,4 @@
 #include "camera/Camera.hpp"
 #include "test_app/TestApp.hpp"
 #include "video_player/VideoPlayer.hpp"
+#include "ssvep/SSVEPApp.hpp"
