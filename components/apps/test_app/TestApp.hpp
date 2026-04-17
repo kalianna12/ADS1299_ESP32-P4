@@ -5,6 +5,10 @@
  */
 #pragma once
 
+#include <string>
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "lvgl.h"
 #include "esp_brookesia.hpp"
 
@@ -16,23 +20,27 @@ public:
     bool run(void);
     bool back(void);
     bool close(void);
-
     bool init(void) override;
 
 private:
     lv_obj_t *_status_label;
-    lv_obj_t *_value_label;
-    lv_obj_t *_preview_box;
-    lv_obj_t *_preview_text;
-    lv_obj_t *_accent_bar;
-    uint32_t _tap_count;
+    lv_obj_t *_button_label;
+    lv_obj_t *_refresh_label;
+    lv_obj_t *_response_label;
+    lv_obj_t *_response_panel;
+    lv_obj_t *_spinner;
 
-    static void preview_size_anim_cb(void *obj, int32_t value);
-    static void onSliderChanged(lv_event_t *e);
-    static void onSwitchChanged(lv_event_t *e);
+    TaskHandle_t _request_task;
+    uint32_t _ui_generation;
+    bool _request_running;
+
     static void onButtonClicked(lv_event_t *e);
+    static void requestTaskEntry(void *arg);
 
-    void updateIntensity(int32_t value);
-    void setInteractiveMode(bool enabled);
-    void animatePreview(void);
+    void startRequest(void);
+    void setStatus(const char *text);
+    void setResponseText(const char *text);
+    void setLoading(bool loading);
+    bool isUiValid(uint32_t generation) const;
+    std::string performRequest(void) const;
 };
