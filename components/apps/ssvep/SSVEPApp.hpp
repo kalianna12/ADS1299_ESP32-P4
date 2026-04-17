@@ -16,9 +16,16 @@ typedef enum {
     SSVEP_FREQ_8HZ = 0,
     SSVEP_FREQ_10HZ = 1,
     SSVEP_FREQ_12HZ = 2,
-    SSVEP_FREQ_14HZ = 3,
+    SSVEP_FREQ_9HZ = 3,
     SSVEP_FREQ_NUM = 4
 } ssvep_freq_t;
+
+// 频率组模式
+typedef enum {
+    SSVEP_MODE_GROUP1 = 0,  // 8, 10, 12, 14
+    SSVEP_MODE_GROUP2 = 1,  // 18, 20, 22, 24
+    SSVEP_MODE_NUM = 2
+} ssvep_mode_t;
 
 // 灰度查表结构
 typedef struct {
@@ -73,11 +80,20 @@ private:
     uint16_t _app_height;
     uint16_t _rect_size;
     
+    // 频率组模式切换
+    ssvep_mode_t _current_mode;                 // 当前频率模式
+    lv_obj_t *_mode_switch_btn;                 // 模式切换按钮
+    lv_obj_t *_mode_label;                      // 模式标签
+    lv_obj_t *_freq_label;                      // 频率显示标签
+    lv_obj_t *_test_button_labels[SSVEP_FREQ_NUM];  // 测试按钮标签
+    
     // 方法
     void initGrayscaleTables(void);
     void createRectangles(lv_obj_t *parent);
     void createFeedbackArea(lv_obj_t *parent);
     void createTestButtons(lv_obj_t *parent);
+    void createModeSwitch(lv_obj_t *parent);
+    void switchMode(void);
     uint8_t getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms);
     void updateAllRectangles(uint32_t current_ms);
     void setFeedback(ssvep_freq_t detected_freq);  // 用于设置检测到的频率反馈
@@ -91,7 +107,8 @@ private:
     
     // 事件处理
     static void testButtonEventHandler(lv_event_t *e);
-    
+    static void modeSwitchEventHandler(lv_event_t *e);
+
 private:
     ssvep_freq_t _feedback_freq;  // 检测到的频率反馈
     uint32_t _feedback_start_time;  // 反馈开始时间

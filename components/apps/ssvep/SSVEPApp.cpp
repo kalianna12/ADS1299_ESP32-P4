@@ -12,9 +12,17 @@
 
 static const char *TAG = "SSVEPApp";
 
-// 频率配置表
-static constexpr const uint16_t FREQ_HZ[SSVEP_FREQ_NUM] = {8, 10, 12, 14};
-static constexpr const uint16_t FREQ_PERIOD_MS[SSVEP_FREQ_NUM] = {125, 100, 83, 71};  // 1000/freq，单位ms
+// 频率配置表 - 支持两组模式
+// 第一组: 8, 10, 12, 14
+// 第二组: 18, 20, 22, 24
+static constexpr const uint16_t FREQ_HZ[SSVEP_MODE_NUM][SSVEP_FREQ_NUM] = {
+    {8, 10, 12, 14},   // GROUP1
+    {18, 20, 22, 24}   // GROUP2
+};
+static constexpr const uint16_t FREQ_PERIOD_MS[SSVEP_MODE_NUM][SSVEP_FREQ_NUM] = {
+    {125, 100, 83, 71},   // GROUP1: 1000/8, 1000/10, 1000/12, 1000/14
+    {56, 50, 45, 42}      // GROUP2: 1000/18, 1000/20, 1000/22, 1000/24
+};
 
 // 灰度查表大小（128个采样点，覆盖一个完整周期）
 static constexpr const uint16_t GRAYSCALE_TABLE_SIZE = 128;
@@ -28,6 +36,10 @@ SSVEPApp::SSVEPApp():
     _app_width(920),
     _app_height(470),
     _rect_size(300),
+    _current_mode(SSVEP_MODE_GROUP1),
+    _mode_switch_btn(nullptr),
+    _mode_label(nullptr),
+    _freq_label(nullptr),
     _feedback_freq((ssvep_freq_t)(-1)),
     _feedback_start_time(0)
 {
@@ -35,6 +47,7 @@ SSVEPApp::SSVEPApp():
     std::memset(_rects, 0, sizeof(_rects));
     std::memset(_feedback_rects, 0, sizeof(_feedback_rects));
     std::memset(_test_buttons, 0, sizeof(_test_buttons));
+    std::memset(_test_button_labels, 0, sizeof(_test_button_labels));
 }
 
 SSVEPApp::~SSVEPApp()
@@ -88,6 +101,9 @@ bool SSVEPApp::run(void)
     
     // 创建测试按钮
     createTestButtons(_app_area);
+    
+    // 创建模式切换按钮
+    createModeSwitch(_app_area);
     
     // 启动更新任务
     _task_running = true;
@@ -146,30 +162,30 @@ bool SSVEPApp::resume(void)
 
 void SSVEPApp::initGrayscaleTables(void)
 {
-    ESP_LOGI(TAG, "Initializing grayscale tables...");
+    ESP_LOGI(TAG, "Initializing grayscale tables for mode %d...", _current_mode);
     
     for (int freq_idx = 0; freq_idx < SSVEP_FREQ_NUM; freq_idx++) {
         // 为每个频率分配灰度表
         _freq_tables[freq_idx].grayscale_table = (uint8_t *)malloc(GRAYSCALE_TABLE_SIZE);
         _freq_tables[freq_idx].table_size = GRAYSCALE_TABLE_SIZE;
-        _freq_tables[freq_idx].period_ms = FREQ_PERIOD_MS[freq_idx];
+        _freq_tables[freq_idx].period_ms = FREQ_PERIOD_MS[_current_mode][freq_idx];
         
         if (_freq_tables[freq_idx].grayscale_table == nullptr) {
-            ESP_LOGE(TAG, "Failed to allocate grayscale table for frequency %d Hz", FREQ_HZ[freq_idx]);
+            ESP_LOGE(TAG, "Failed to allocate grayscale table for frequency %d Hz", FREQ_HZ[_current_mode][freq_idx]);
             continue;
         }
         
-        // 使用正弦波生成灰度值：128 + 127*sin(2*pi*i/table_size)
-        // 这样会产生0-255的灰度值
+        // 使用正弦波生成灰度值：(sin(phase) + 1) * 127.5，确保范围0-255
+        // 这样会产生0-255的灰度值，完全暗到完全亮
         for (int i = 0; i < GRAYSCALE_TABLE_SIZE; i++) {
             float phase = (2.0f * 3.14159265f * i) / GRAYSCALE_TABLE_SIZE;
             float sine_value = sinf(phase);  // -1 to 1
-            uint8_t gray_value = (uint8_t)(128.0f + 127.0f * sine_value);
+            uint8_t gray_value = (uint8_t)((sine_value + 1.0f) * 127.5f);
             _freq_tables[freq_idx].grayscale_table[i] = gray_value;
         }
         
         ESP_LOGI(TAG, "Grayscale table for %d Hz initialized (period: %d ms)", 
-                 FREQ_HZ[freq_idx], _freq_tables[freq_idx].period_ms);
+                 FREQ_HZ[_current_mode][freq_idx], _freq_tables[freq_idx].period_ms);
     }
 }
 
@@ -187,7 +203,7 @@ void SSVEPApp::createRectangles(lv_obj_t *parent)
         {LV_ALIGN_TOP_LEFT, 10, 10, SSVEP_FREQ_8HZ},      // 左上 - 8Hz
         {LV_ALIGN_TOP_RIGHT, -10, 10, SSVEP_FREQ_10HZ},   // 右上 - 10Hz
         {LV_ALIGN_BOTTOM_LEFT, 10, -10, SSVEP_FREQ_12HZ}, // 左下 - 12Hz
-        {LV_ALIGN_BOTTOM_RIGHT, -10, -10, SSVEP_FREQ_14HZ} // 右下 - 14Hz
+        {LV_ALIGN_BOTTOM_RIGHT, -10, -10, SSVEP_FREQ_9HZ} // 右下 - 9Hz
     };
     
     uint32_t current_ms = esp_timer_get_time() / 1000;
@@ -217,7 +233,7 @@ void SSVEPApp::createRectangles(lv_obj_t *parent)
         lv_obj_set_style_bg_color(_rects[i].rect, color, 0);
         
         ESP_LOGI(TAG, "Rectangle %d created at corner %d with frequency %d Hz", 
-                 i, i, FREQ_HZ[corner_config[i].freq]);
+                 i, i, FREQ_HZ[_current_mode][corner_config[i].freq]);
     }
 }
 
@@ -233,11 +249,15 @@ void SSVEPApp::createFeedbackArea(lv_obj_t *parent)
     lv_obj_align(feedback_label, LV_ALIGN_CENTER, 0, -20);
     
     // 创建频率信息标签
-    lv_obj_t *freq_label = lv_label_create(parent);
-    lv_label_set_text(freq_label, "8Hz  10Hz  12Hz  14Hz");
-    lv_obj_set_style_text_color(freq_label, lv_color_hex(0x888888), 0);
-    lv_obj_set_style_text_font(freq_label, &lv_font_montserrat_16, 0);
-    lv_obj_align(freq_label, LV_ALIGN_CENTER, 0, 20);
+    _freq_label = lv_label_create(parent);
+    lv_label_set_text_fmt(_freq_label, "%dHz  %dHz  %dHz  %dHz",
+                          FREQ_HZ[_current_mode][0],
+                          FREQ_HZ[_current_mode][1],
+                          FREQ_HZ[_current_mode][2],
+                          FREQ_HZ[_current_mode][3]);
+    lv_obj_set_style_text_color(_freq_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(_freq_label, &lv_font_montserrat_16, 0);
+    lv_obj_align(_freq_label, LV_ALIGN_CENTER, 0, 20);
     
     ESP_LOGI(TAG, "Feedback area created");
 }
@@ -247,12 +267,11 @@ void SSVEPApp::createTestButtons(lv_obj_t *parent)
     ESP_LOGI(TAG, "Creating test buttons...");
     
     // 按钮配置
-    const char *button_labels[SSVEP_FREQ_NUM] = {"8Hz", "10Hz", "12Hz", "14Hz"};
     lv_color_t button_colors[SSVEP_FREQ_NUM] = {
-        lv_color_hex(0x4CAF50),  // 绿色 - 8Hz
-        lv_color_hex(0x2196F3),  // 蓝色 - 10Hz
-        lv_color_hex(0xFF9800),  // 橙色 - 12Hz
-        lv_color_hex(0xF44336)   // 红色 - 14Hz
+        lv_color_hex(0x4CAF50),  // 绿色 - 第1个频率
+        lv_color_hex(0x2196F3),  // 蓝色 - 第2个频率
+        lv_color_hex(0xFF9800),  // 橙色 - 第3个频率
+        lv_color_hex(0xF44336)   // 红色 - 第4个频率
     };
     
     // 创建四个测试按钮，排列在底部
@@ -270,12 +289,15 @@ void SSVEPApp::createTestButtons(lv_obj_t *parent)
         lv_obj_set_style_border_color(_test_buttons[i], lv_color_hex(0x333333), 0);
         lv_obj_set_style_radius(_test_buttons[i], 8, 0);
         
-        // 创建按钮标签
+        // 创建按钮标签 - 动态显示当前模式的频率
         lv_obj_t *label = lv_label_create(_test_buttons[i]);
-        lv_label_set_text(label, button_labels[i]);
+        lv_label_set_text_fmt(label, "%dHz", FREQ_HZ[_current_mode][i]);
         lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), 0);
         lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
         lv_obj_center(label);
+        
+        // 保存标签引用以便后续模式切换时更新
+        _test_button_labels[i] = label;
         
         // 设置事件处理
         lv_obj_add_event_cb(_test_buttons[i], testButtonEventHandler, LV_EVENT_CLICKED, this);
@@ -283,7 +305,7 @@ void SSVEPApp::createTestButtons(lv_obj_t *parent)
         // 在按钮的用户数据中存储频率索引
         lv_obj_set_user_data(_test_buttons[i], (void*)(uintptr_t)i);
         
-        ESP_LOGI(TAG, "Test button %d created for %s", i, button_labels[i]);
+        ESP_LOGI(TAG, "Test button %d created for %d Hz", i, FREQ_HZ[_current_mode][i]);
     }
     
     ESP_LOGI(TAG, "Test buttons created");
@@ -307,7 +329,94 @@ void SSVEPApp::testButtonEventHandler(lv_event_t *e)
     // 触发对应频率的反馈
     app->setFeedback((ssvep_freq_t)freq_idx);
     
-    ESP_LOGI(TAG, "Test button clicked for frequency %d Hz", FREQ_HZ[freq_idx]);
+    ESP_LOGI(TAG, "Test button clicked for frequency index %d", freq_idx);
+}
+
+void SSVEPApp::createModeSwitch(lv_obj_t *parent)
+{
+    ESP_LOGI(TAG, "Creating mode switch button...");
+    
+    // 创建模式切换按钮（顶部中间）
+    _mode_switch_btn = lv_btn_create(parent);
+    lv_obj_set_size(_mode_switch_btn, 100, 50);
+    lv_obj_align(_mode_switch_btn, LV_ALIGN_TOP_MID, 0, 10);
+    
+    // 设置按钮样式
+    lv_obj_set_style_bg_color(_mode_switch_btn, lv_color_hex(0x9C27B0), 0);  // 紫色
+    lv_obj_set_style_border_width(_mode_switch_btn, 2, 0);
+    lv_obj_set_style_border_color(_mode_switch_btn, lv_color_hex(0x333333), 0);
+    lv_obj_set_style_radius(_mode_switch_btn, 8, 0);
+    
+    // 创建按钮标签
+    _mode_label = lv_label_create(_mode_switch_btn);
+    lv_label_set_text_fmt(_mode_label, "Mode: %d", _current_mode + 1);
+    lv_obj_set_style_text_color(_mode_label, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_font(_mode_label, &lv_font_montserrat_14, 0);
+    lv_obj_center(_mode_label);
+    
+    // 设置事件处理
+    lv_obj_add_event_cb(_mode_switch_btn, modeSwitchEventHandler, LV_EVENT_CLICKED, this);
+    
+    ESP_LOGI(TAG, "Mode switch button created");
+}
+
+void SSVEPApp::switchMode(void)
+{
+    // 清理旧的灰度表
+    for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
+        if (_freq_tables[i].grayscale_table != nullptr) {
+            free(_freq_tables[i].grayscale_table);
+            _freq_tables[i].grayscale_table = nullptr;
+        }
+    }
+    
+    // 切换模式
+    _current_mode = (_current_mode == SSVEP_MODE_GROUP1) ? SSVEP_MODE_GROUP2 : SSVEP_MODE_GROUP1;
+    
+    // 重新初始化灰度表
+    initGrayscaleTables();
+    
+    // 更新模式标签
+    lv_label_set_text_fmt(_mode_label, "Mode: %d", _current_mode + 1);
+    
+    // 重置所有方框的相位时间
+    uint32_t current_ms = esp_timer_get_time() / 1000;
+    for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
+        _rects[i].phase_start_ms = current_ms;
+    }
+    
+    // 更新频率显示标签
+    if (_freq_label != nullptr) {
+        lv_label_set_text_fmt(_freq_label, "%dHz  %dHz  %dHz  %dHz",
+                              FREQ_HZ[_current_mode][0],
+                              FREQ_HZ[_current_mode][1],
+                              FREQ_HZ[_current_mode][2],
+                              FREQ_HZ[_current_mode][3]);
+    }
+    
+    // 更新测试按钮标签
+    for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
+        if (_test_button_labels[i] != nullptr) {
+            lv_label_set_text_fmt(_test_button_labels[i], "%dHz", FREQ_HZ[_current_mode][i]);
+        }
+    }
+    
+    ESP_LOGI(TAG, "Switched to mode %d with frequencies: %d, %d, %d, %d Hz", 
+             _current_mode,
+             FREQ_HZ[_current_mode][0],
+             FREQ_HZ[_current_mode][1],
+             FREQ_HZ[_current_mode][2],
+             FREQ_HZ[_current_mode][3]);
+}
+
+void SSVEPApp::modeSwitchEventHandler(lv_event_t *e)
+{
+    SSVEPApp *app = static_cast<SSVEPApp*>(lv_event_get_user_data(e));
+    if (app == nullptr) {
+        return;
+    }
+    
+    app->switchMode();
 }
 
 uint8_t SSVEPApp::getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms)
@@ -409,7 +518,7 @@ void SSVEPApp::setFeedback(ssvep_freq_t detected_freq)
     _feedback_freq = detected_freq;
     _feedback_start_time = esp_timer_get_time() / 1000;
     
-    ESP_LOGI(TAG, "Feedback detected: %d Hz", FREQ_HZ[detected_freq]);
+    ESP_LOGI(TAG, "Feedback detected: %d Hz", FREQ_HZ[_current_mode][detected_freq]);
 }
 
 void SSVEPApp::clearFeedback(void)
