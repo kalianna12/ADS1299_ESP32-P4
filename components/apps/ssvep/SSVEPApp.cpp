@@ -24,8 +24,8 @@ static constexpr const uint16_t FREQ_PERIOD_MS[SSVEP_MODE_NUM][SSVEP_FREQ_NUM] =
     {56, 50, 45, 42}      // GROUP2: 1000/18, 1000/20, 1000/22, 1000/24
 };
 
-// 灰度查表大小（128个采样点，覆盖一个完整周期）
-static constexpr const uint16_t GRAYSCALE_TABLE_SIZE = 128;
+// 灰度查表大小（64个采样点，覆盖一个完整周期，提供更高精度）
+static constexpr const uint16_t GRAYSCALE_TABLE_SIZE = 64;
 
 SSVEPApp::SSVEPApp():
     ESP_Brookesia_PhoneApp("SSVEP", nullptr, true),
