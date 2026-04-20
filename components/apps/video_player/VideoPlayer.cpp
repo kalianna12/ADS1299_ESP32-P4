@@ -26,6 +26,14 @@ using namespace std;
 
 static const char *TAG = "AppVideoPlayer";
 
+static void log_memory_snapshot(const char *stage)
+{
+    ESP_LOGW(TAG, "[mem_trace] %s sram=%u psram=%u",
+             stage,
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+}
+
 LV_IMG_DECLARE(breaking_news);
 LV_IMG_DECLARE(img_app_video_player);
 
@@ -44,41 +52,47 @@ AppVideoPlayer::~AppVideoPlayer()
 
 bool AppVideoPlayer::run(void)
 {
+    log_memory_snapshot("run:before");
     app_show_ui();
-
+    log_memory_snapshot("run:after");
     return true;
 }
 
 bool AppVideoPlayer::pause(void)
 {
+    log_memory_snapshot("pause:before");
     esp_lvgl_simple_player_pause();
-
+    log_memory_snapshot("pause:after");
     return true;
 }
 
 bool AppVideoPlayer::resume(void)
 {
+    log_memory_snapshot("resume:before");
     esp_lvgl_simple_player_resume();
-
+    log_memory_snapshot("resume:after");
     return true;
 }
 
 bool AppVideoPlayer::back(void)
 {
+    log_memory_snapshot("back");
     return notifyCoreClosed();
 }
 
 bool AppVideoPlayer::close(void)
 {
+    log_memory_snapshot("close:before");
     esp_lv_adapter_unlock();
     esp_lvgl_simple_player_del();
     esp_lv_adapter_lock(100);
-
+    log_memory_snapshot("close:after");
     return true;
 }
 
 bool AppVideoPlayer::init(void)
 {
+    log_memory_snapshot("init");
     return true;
 }
 

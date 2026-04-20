@@ -52,6 +52,14 @@ LV_IMG_DECLARE(img_app_camera);
 
 static const char *TAG = "Camera";
 
+static void log_memory_snapshot(const char *stage)
+{
+    ESP_LOGW(TAG, "[mem_trace] %s sram=%u psram=%u",
+             stage,
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+}
+
 // AI detection variables
 // static void **detect_buf;
 static vector<vector<int>> detect_bound;
@@ -93,6 +101,8 @@ Camera::~Camera()
 
 bool Camera::run(void)
 {
+    log_memory_snapshot("run:before");
+
     if (_camera_init_sem == NULL) {
         _camera_init_sem = xSemaphoreCreateBinary();
         assert(_camera_init_sem != NULL);
@@ -201,25 +211,29 @@ bool Camera::run(void)
 
     }, LV_EVENT_CLICKED, this);
 
+    log_memory_snapshot("run:after");
     return true;
 }
 
 bool Camera::pause(void)
 {
+    log_memory_snapshot("pause:before");
     xEventGroupClearBits(camera_event_group, CAMERA_EVENT_TASK_RUN);
-
+    log_memory_snapshot("pause:after");
     return true;
 }
 
 bool Camera::resume(void)
 {
+    log_memory_snapshot("resume:before");
     xEventGroupSetBits(camera_event_group, CAMERA_EVENT_TASK_RUN);
-
+    log_memory_snapshot("resume:after");
     return true;
 }
 
 bool Camera::back(void)
 {
+    log_memory_snapshot("back");
     notifyCoreClosed();
 
     return true;
@@ -227,6 +241,7 @@ bool Camera::back(void)
 
 bool Camera::close(void)
 {
+    log_memory_snapshot("close:before");
     xEventGroupSetBits(camera_event_group, CAMERA_EVENT_TASK_RUN);
     xEventGroupSetBits(camera_event_group, CAMERA_EVENT_DELETE);
     xEventGroupClearBits(camera_event_group, CAMERA_EVENT_PED_DETECT);
@@ -240,11 +255,13 @@ bool Camera::close(void)
         _img_album_buffer = NULL;
     }
 
+    log_memory_snapshot("close:after");
     return true;
 }
 
 bool Camera::init(void)
 {
+    log_memory_snapshot("init:before");
     camera_event_group = xEventGroupCreate();
     xEventGroupClearBits(camera_event_group, CAMERA_EVENT_TASK_RUN);
     xEventGroupClearBits(camera_event_group, CAMERA_EVENT_DELETE);
@@ -323,6 +340,7 @@ bool Camera::init(void)
     };
     camera_element_pipeline_new(&detect_feed_cfg, &detect_pipeline);
 
+    log_memory_snapshot("init:after");
     return true;
 }
 

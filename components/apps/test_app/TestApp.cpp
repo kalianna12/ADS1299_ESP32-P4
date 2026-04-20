@@ -12,11 +12,20 @@
 #include "esp_crt_bundle.h"
 #include "esp_err.h"
 #include "esp_http_client.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_lv_adapter.h"
 
 // 定义日志标签，用于通过串口/JTAG输出日志
 static const char *TAG = "ArkTestApp";
+
+static void log_memory_snapshot(const char *stage)
+{
+    ESP_LOGW(TAG, "[mem_trace] %s sram=%u psram=%u",
+             stage,
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+}
 
 static constexpr const char *kArkApiUrl = "https://ark.cn-beijing.volces.com/api/v3/responses";
 static constexpr const char *kArkApiKey = "40c16139-0b05-469b-884e-61942a00f437";
@@ -57,6 +66,7 @@ TestApp::~TestApp()
 
 bool TestApp::run(void)
 {
+    log_memory_snapshot("run:before");
     lv_obj_t *screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x06070a), 0);
     lv_obj_set_style_bg_grad_color(screen, lv_color_hex(0x171a22), 0);
@@ -208,6 +218,7 @@ bool TestApp::run(void)
     lv_obj_add_flag(_spinner, LV_OBJ_FLAG_HIDDEN);
 
     startRequest();
+    log_memory_snapshot("run:after");
     return true;
 }
 
@@ -220,6 +231,7 @@ void TestApp::onButtonClicked(lv_event_t *e)
 void TestApp::requestTaskEntry(void *arg)
 {
     auto *self = static_cast<TestApp *>(arg);
+    log_memory_snapshot("request_task:start");
     const uint32_t generation = self->_ui_generation;
     const std::string response = self->performRequest();
     
@@ -236,6 +248,7 @@ void TestApp::requestTaskEntry(void *arg)
     
     self->_request_running = false;
     self->_request_task = nullptr;
+    log_memory_snapshot("request_task:end");
     vTaskDelete(nullptr);
 }
 
@@ -244,6 +257,7 @@ void TestApp::startRequest(void)
     if (_request_running) {
         return;
     }
+    log_memory_snapshot("startRequest:before");
     _request_running = true;
     
     setLoading(true);
@@ -251,6 +265,7 @@ void TestApp::startRequest(void)
     setResponseText("Waiting for Volcengine Ark response...");
     
     xTaskCreatePinnedToCore(requestTaskEntry, "test_app_ark", 12288, this, 4, &_request_task, tskNO_AFFINITY);
+    log_memory_snapshot("startRequest:after");
 }
 
 void TestApp::setStatus(const char *text)
@@ -458,12 +473,14 @@ std::string TestApp::performRequest(void) const
 
 bool TestApp::back(void)
 {
+    log_memory_snapshot("back");
     notifyCoreClosed();
     return true;
 }
 
 bool TestApp::close(void)
 {
+    log_memory_snapshot("close:before");
     _ui_generation++;
     _status_label = nullptr;
     _button_label = nullptr;
@@ -472,10 +489,12 @@ bool TestApp::close(void)
     _response_panel = nullptr;
     _spinner = nullptr;
     _request_running = false;
+    log_memory_snapshot("close:after");
     return true;
 }
 
 bool TestApp::init(void)
 {
+    log_memory_snapshot("init");
     return true;
 }

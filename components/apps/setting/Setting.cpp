@@ -11,6 +11,7 @@
 #include "esp_err.h"
 #include "esp_wifi.h"
 #include "esp_check.h"
+#include "esp_heap_caps.h"
 #include "esp_memory_utils.h"
 #include "esp_mac.h"
 #include "bsp/esp-bsp.h"
@@ -72,6 +73,14 @@ using namespace std;
 
 static const char TAG[] = "EUI_Setting";
 
+static void log_memory_snapshot(const char *stage)
+{
+    ESP_LOGW(TAG, "[mem_trace] %s sram=%u psram=%u",
+             stage,
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+}
+
 TaskHandle_t wifi_scan_handle_task;
 
 static EventGroupHandle_t s_wifi_event_group;
@@ -127,6 +136,7 @@ AppSettings::~AppSettings()
 
 bool AppSettings::run(void)
 {
+    log_memory_snapshot("run:before");
     _is_ui_del = false;
 
     // Initialize Squareline UI
@@ -147,11 +157,13 @@ bool AppSettings::run(void)
 
     xEventGroupSetBits(s_wifi_event_group, WIFI_EVENT_UI_INIT_DONE);
 
+    log_memory_snapshot("run:after");
     return true;
 }
 
 bool AppSettings::back(void)
 {
+    log_memory_snapshot("back:before");
     _is_ui_resumed = false;
 
     if (_screen_index == UI_WIFI_CONNECT_INDEX) {
@@ -167,11 +179,13 @@ bool AppSettings::back(void)
         notifyCoreClosed();
     }
 
+    log_memory_snapshot("back:after");
     return true;
 }
 
 bool AppSettings::close(void)
 {
+    log_memory_snapshot("close:before");
     while(xEventGroupGetBits(s_wifi_event_group) & WIFI_EVENT_SCANING) {
         ESP_LOGI(TAG, "WiFi is scanning, please wait");
         vTaskDelay(pdMS_TO_TICKS(100));
@@ -180,11 +194,13 @@ bool AppSettings::close(void)
 
     _is_ui_del = true;
 
+    log_memory_snapshot("close:after");
     return true;
 }
 
 bool AppSettings::init(void)
 {
+    log_memory_snapshot("init:before");
     ESP_Brookesia_Phone *phone = getPhone();
     ESP_Brookesia_PhoneHome& home = phone->getHome();
     status_bar = home.getStatusBar();
@@ -207,20 +223,23 @@ bool AppSettings::init(void)
     xTaskCreate(euiRefresTask, "Home Refresh", HOME_REFRESH_TASK_STACK_SIZE, this, HOME_REFRESH_TASK_PRIORITY, NULL);
     xTaskCreate(wifiScanTask, "WiFi Scan", WIFI_SCAN_TASK_STACK_SIZE, this, WIFI_SCAN_TASK_PRIORITY, NULL);
 
+    log_memory_snapshot("init:after");
     return true;
 }
 
 bool AppSettings::pause(void)
 {
+    log_memory_snapshot("pause:before");
     _is_ui_resumed = true;
-
+    log_memory_snapshot("pause:after");
     return true;
 }
 
 bool AppSettings::resume(void)
 {
+    log_memory_snapshot("resume:before");
     _is_ui_resumed = false;
-
+    log_memory_snapshot("resume:after");
     return true;
 }
 
