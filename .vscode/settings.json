@@ -1,0 +1,26 @@
+{
+  "idf.portWin": "COM6",
+  "idf.openOcdConfigs": [
+    "board/esp32p4-builtin.cfg"
+  ],
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32p4"
+  },
+  "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+  "C_Cpp.default.compilerPath": "C:/Users/kalianna/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/riscv32-esp-elf-g++.exe",
+  "C_Cpp.default.browse.path": [
+    "${workspaceFolder}",
+    "${workspaceFolder}/main",
+    "${workspaceFolder}/components",
+    "${workspaceFolder}/managed_components",
+    "${workspaceFolder}/build/config",
+    "${workspaceFolder}/../common_components"
+  ],
+  "clangd.path": "C:\\Users\\kalianna\\.espressif\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=g:\\VSCODE_Save_Files\\ESP32IDFCode\\esp-dev-kits\\examples\\esp32-p4-function-ev-board\\examples\\esp_brookesia_phone\\build"
+  ],
+  "idf.flashType": "JTAG"
+}
