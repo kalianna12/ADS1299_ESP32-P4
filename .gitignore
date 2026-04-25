@@ -1,8 +1,3 @@
 # ESP-IDF .gitignore
 build/
-sdkconfig
-sdkconfig.old
-.vscode/settings.json
-.clangd
-dependencies.lock
-managed_components/
+
