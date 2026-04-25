@@ -15,15 +15,9 @@ typedef enum {
     SSVEP_FREQ_8HZ = 0,
     SSVEP_FREQ_10HZ = 1,
     SSVEP_FREQ_12HZ = 2,
-    SSVEP_FREQ_9HZ = 3,
+    SSVEP_FREQ_14HZ = 3,
     SSVEP_FREQ_NUM = 4
 } ssvep_freq_t;
-
-typedef enum {
-    SSVEP_MODE_GROUP1 = 0,
-    SSVEP_MODE_GROUP2 = 1,
-    SSVEP_MODE_NUM = 2
-} ssvep_mode_t;
 
 typedef struct {
     uint8_t *grayscale_table;
@@ -65,13 +59,8 @@ private:
 
     static constexpr uint32_t UPDATE_PERIOD_MS = 10;
 
-    uint16_t _app_width;
-    uint16_t _app_height;
     uint16_t _rect_size;
 
-    ssvep_mode_t _current_mode;
-    lv_obj_t *_mode_switch_btn;
-    lv_obj_t *_mode_label;
     lv_obj_t *_freq_label;
     lv_obj_t *_test_button_labels[SSVEP_FREQ_NUM];
 
@@ -79,8 +68,6 @@ private:
     void createRectangles(lv_obj_t *parent);
     void createFeedbackArea(lv_obj_t *parent);
     void createTestButtons(lv_obj_t *parent);
-    void createModeSwitch(lv_obj_t *parent);
-    void switchMode(void);
     uint8_t getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms);
     void updateAllRectangles(uint32_t current_ms);
     void setFeedback(ssvep_freq_t detected_freq);
@@ -92,7 +79,6 @@ private:
     lv_color_t grayscaleToColor(uint8_t value);
 
     static void testButtonEventHandler(lv_event_t *e);
-    static void modeSwitchEventHandler(lv_event_t *e);
 
 private:
     ssvep_freq_t _feedback_freq;

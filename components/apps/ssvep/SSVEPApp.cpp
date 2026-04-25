@@ -13,14 +13,12 @@
 
 static const char *TAG = "SSVEPApp";
 
-static constexpr uint16_t FREQ_HZ[SSVEP_MODE_NUM][SSVEP_FREQ_NUM] = {
-    {8, 10, 12, 14},
-    {18, 20, 22, 24}
+static constexpr uint16_t FREQ_HZ[SSVEP_FREQ_NUM] = {
+    8, 10, 12, 14
 };
 
-static constexpr uint16_t FREQ_PERIOD_MS[SSVEP_MODE_NUM][SSVEP_FREQ_NUM] = {
-    {125, 100, 83, 71},
-    {56, 50, 45, 42}
+static constexpr uint16_t FREQ_PERIOD_MS[SSVEP_FREQ_NUM] = {
+    125, 100, 83, 71
 };
 
 static constexpr uint16_t GRAYSCALE_TABLE_SIZE = 64;
@@ -31,12 +29,7 @@ SSVEPApp::SSVEPApp():
     _update_task(nullptr),
     _task_running(false),
     _is_paused(false),
-    _app_width(920),
-    _app_height(470),
     _rect_size(300),
-    _current_mode(SSVEP_MODE_GROUP1),
-    _mode_switch_btn(nullptr),
-    _mode_label(nullptr),
     _freq_label(nullptr),
     _feedback_freq(static_cast<ssvep_freq_t>(-1)),
     _feedback_start_time(0)
@@ -77,21 +70,19 @@ bool SSVEPApp::run(void)
     lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
 
     _app_area = lv_obj_create(screen);
-    lv_obj_set_size(_app_area, _app_width, _app_height);
-    lv_obj_center(_app_area);
+    // Set app area to fill screen but leave space for status bar at top
+    lv_obj_set_size(_app_area, lv_obj_get_width(screen), lv_obj_get_height(screen) - 60);
+    lv_obj_align(_app_area, LV_ALIGN_TOP_MID, 0, 20);
     lv_obj_set_style_radius(_app_area, 0, 0);
-    lv_obj_set_style_border_width(_app_area, 1, 0);
-    lv_obj_set_style_border_color(_app_area, lv_color_hex(0x353a46), 0);
-    lv_obj_set_style_bg_color(_app_area, lv_color_hex(0x0a0a0a), 0);
+    lv_obj_set_style_border_width(_app_area, 0, 0);
+    lv_obj_set_style_bg_color(_app_area, lv_color_hex(0x000000), 0);
     lv_obj_set_style_pad_all(_app_area, 0, 0);
     lv_obj_clear_flag(_app_area, LV_OBJ_FLAG_SCROLLABLE);
 
-    _rect_size = ((_app_width / 3) - 20) / 2;
+    _rect_size = 180;
 
     createRectangles(_app_area);
-    createFeedbackArea(_app_area);
     createTestButtons(_app_area);
-    createModeSwitch(_app_area);
 
     _task_running = true;
     BaseType_t task_ret = xTaskCreatePinnedToCore(
@@ -150,17 +141,17 @@ bool SSVEPApp::resume(void)
 
 void SSVEPApp::initGrayscaleTables(void)
 {
-    ESP_LOGI(TAG, "Initializing grayscale tables for mode %d...", _current_mode);
+    ESP_LOGI(TAG, "Initializing grayscale tables...");
 
     for (int freq_idx = 0; freq_idx < SSVEP_FREQ_NUM; freq_idx++) {
         if (_freq_tables[freq_idx].grayscale_table == nullptr) {
             _freq_tables[freq_idx].grayscale_table = static_cast<uint8_t *>(malloc(GRAYSCALE_TABLE_SIZE));
         }
         _freq_tables[freq_idx].table_size = GRAYSCALE_TABLE_SIZE;
-        _freq_tables[freq_idx].period_ms = FREQ_PERIOD_MS[_current_mode][freq_idx];
+        _freq_tables[freq_idx].period_ms = FREQ_PERIOD_MS[freq_idx];
 
         if (_freq_tables[freq_idx].grayscale_table == nullptr) {
-            ESP_LOGE(TAG, "Failed to allocate grayscale table for frequency %d Hz", FREQ_HZ[_current_mode][freq_idx]);
+            ESP_LOGE(TAG, "Failed to allocate grayscale table for frequency %d Hz", FREQ_HZ[freq_idx]);
             continue;
         }
 
@@ -172,7 +163,7 @@ void SSVEPApp::initGrayscaleTables(void)
         }
 
         ESP_LOGI(TAG, "Grayscale table for %d Hz initialized (period: %d ms)",
-                 FREQ_HZ[_current_mode][freq_idx], _freq_tables[freq_idx].period_ms);
+                 FREQ_HZ[freq_idx], _freq_tables[freq_idx].period_ms);
     }
 }
 
@@ -184,10 +175,10 @@ void SSVEPApp::createRectangles(lv_obj_t *parent)
         int16_t y_ofs;
         ssvep_freq_t freq;
     } corner_config[SSVEP_FREQ_NUM] = {
-        {LV_ALIGN_TOP_LEFT, 10, 10, SSVEP_FREQ_8HZ},
-        {LV_ALIGN_TOP_RIGHT, -10, 10, SSVEP_FREQ_10HZ},
-        {LV_ALIGN_BOTTOM_LEFT, 10, -10, SSVEP_FREQ_12HZ},
-        {LV_ALIGN_BOTTOM_RIGHT, -10, -10, SSVEP_FREQ_9HZ}
+        {LV_ALIGN_TOP_MID, 0, 0, SSVEP_FREQ_8HZ},       // Top
+        {LV_ALIGN_BOTTOM_MID, 0, -10, SSVEP_FREQ_10HZ}, // Bottom
+        {LV_ALIGN_LEFT_MID, 10, 0, SSVEP_FREQ_12HZ},    // Left
+        {LV_ALIGN_RIGHT_MID, -10, 0, SSVEP_FREQ_14HZ}   // Right
     };
 
     uint32_t current_ms = esp_timer_get_time() / 1000;
@@ -221,10 +212,10 @@ void SSVEPApp::createFeedbackArea(lv_obj_t *parent)
 
     _freq_label = lv_label_create(parent);
     lv_label_set_text_fmt(_freq_label, "%dHz  %dHz  %dHz  %dHz",
-                          FREQ_HZ[_current_mode][0],
-                          FREQ_HZ[_current_mode][1],
-                          FREQ_HZ[_current_mode][2],
-                          FREQ_HZ[_current_mode][3]);
+                          FREQ_HZ[0],
+                          FREQ_HZ[1],
+                          FREQ_HZ[2],
+                          FREQ_HZ[3]);
     lv_obj_set_style_text_color(_freq_label, lv_color_hex(0x888888), 0);
     lv_obj_set_style_text_font(_freq_label, &lv_font_montserrat_16, 0);
     lv_obj_align(_freq_label, LV_ALIGN_CENTER, 0, 20);
@@ -239,21 +230,31 @@ void SSVEPApp::createTestButtons(lv_obj_t *parent)
         lv_color_hex(0xF44336)
     };
 
+    struct {
+        lv_align_t align;
+        int16_t x_ofs;
+        int16_t y_ofs;
+    } button_positions[SSVEP_FREQ_NUM] = {
+        {LV_ALIGN_TOP_MID, 0, static_cast<int16_t>(10 + _rect_size + 10)},      // Top
+        {LV_ALIGN_BOTTOM_MID, 0, static_cast<int16_t>(-10 - _rect_size - 10)},  // Bottom
+        {LV_ALIGN_LEFT_MID, static_cast<int16_t>(10 + _rect_size + 10), 0},     // Left
+        {LV_ALIGN_RIGHT_MID, static_cast<int16_t>(-10 - _rect_size - 10), 0}    // Right
+    };
+
     for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
         _test_buttons[i] = lv_btn_create(parent);
         lv_obj_set_size(_test_buttons[i], 80, 40);
 
-        int x_offset = static_cast<int>((i - 1.5f) * 90);
-        lv_obj_align(_test_buttons[i], LV_ALIGN_BOTTOM_MID, x_offset, -20);
+        lv_obj_align(_test_buttons[i], button_positions[i].align, button_positions[i].x_ofs, button_positions[i].y_ofs);
         lv_obj_set_style_bg_color(_test_buttons[i], button_colors[i], 0);
         lv_obj_set_style_border_width(_test_buttons[i], 2, 0);
         lv_obj_set_style_border_color(_test_buttons[i], lv_color_hex(0x333333), 0);
         lv_obj_set_style_radius(_test_buttons[i], 8, 0);
 
         lv_obj_t *label = lv_label_create(_test_buttons[i]);
-        lv_label_set_text_fmt(label, "%dHz", FREQ_HZ[_current_mode][i]);
+        lv_label_set_text_fmt(label, "%dHz", FREQ_HZ[i]);
         lv_obj_set_style_text_color(label, lv_color_hex(0xffffff), 0);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(_test_buttons[i], &lv_font_montserrat_16, 0);
         lv_obj_center(label);
         _test_button_labels[i] = label;
 
@@ -278,61 +279,6 @@ void SSVEPApp::testButtonEventHandler(lv_event_t *e)
     app->setFeedback(static_cast<ssvep_freq_t>(freq_idx));
 }
 
-void SSVEPApp::createModeSwitch(lv_obj_t *parent)
-{
-    _mode_switch_btn = lv_btn_create(parent);
-    lv_obj_set_size(_mode_switch_btn, 100, 50);
-    lv_obj_align(_mode_switch_btn, LV_ALIGN_TOP_MID, 0, 10);
-    lv_obj_set_style_bg_color(_mode_switch_btn, lv_color_hex(0x9C27B0), 0);
-    lv_obj_set_style_border_width(_mode_switch_btn, 2, 0);
-    lv_obj_set_style_border_color(_mode_switch_btn, lv_color_hex(0x333333), 0);
-    lv_obj_set_style_radius(_mode_switch_btn, 8, 0);
-
-    _mode_label = lv_label_create(_mode_switch_btn);
-    lv_label_set_text_fmt(_mode_label, "Mode: %d", _current_mode + 1);
-    lv_obj_set_style_text_color(_mode_label, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_font(_mode_label, &lv_font_montserrat_14, 0);
-    lv_obj_center(_mode_label);
-
-    lv_obj_add_event_cb(_mode_switch_btn, modeSwitchEventHandler, LV_EVENT_CLICKED, this);
-}
-
-void SSVEPApp::switchMode(void)
-{
-    _current_mode = (_current_mode == SSVEP_MODE_GROUP1) ? SSVEP_MODE_GROUP2 : SSVEP_MODE_GROUP1;
-    initGrayscaleTables();
-
-    if (_mode_label != nullptr) {
-        lv_label_set_text_fmt(_mode_label, "Mode: %d", _current_mode + 1);
-    }
-
-    uint32_t current_ms = esp_timer_get_time() / 1000;
-    for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
-        _rects[i].phase_start_ms = current_ms;
-    }
-
-    if (_freq_label != nullptr) {
-        lv_label_set_text_fmt(_freq_label, "%dHz  %dHz  %dHz  %dHz",
-                              FREQ_HZ[_current_mode][0],
-                              FREQ_HZ[_current_mode][1],
-                              FREQ_HZ[_current_mode][2],
-                              FREQ_HZ[_current_mode][3]);
-    }
-
-    for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
-        if (_test_button_labels[i] != nullptr) {
-            lv_label_set_text_fmt(_test_button_labels[i], "%dHz", FREQ_HZ[_current_mode][i]);
-        }
-    }
-}
-
-void SSVEPApp::modeSwitchEventHandler(lv_event_t *e)
-{
-    SSVEPApp *app = static_cast<SSVEPApp *>(lv_event_get_user_data(e));
-    if (app != nullptr) {
-        app->switchMode();
-    }
-}
 
 uint8_t SSVEPApp::getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms)
 {
@@ -422,7 +368,7 @@ void SSVEPApp::setFeedback(ssvep_freq_t detected_freq)
 
     _feedback_freq = detected_freq;
     _feedback_start_time = esp_timer_get_time() / 1000;
-    ESP_LOGI(TAG, "Feedback detected: %d Hz", FREQ_HZ[_current_mode][detected_freq]);
+    ESP_LOGI(TAG, "Feedback detected: %d Hz", FREQ_HZ[detected_freq]);
 }
 
 void SSVEPApp::clearFeedback(void)
@@ -434,8 +380,6 @@ void SSVEPApp::clearFeedback(void)
 void SSVEPApp::resetUiState(void)
 {
     _app_area = nullptr;
-    _mode_switch_btn = nullptr;
-    _mode_label = nullptr;
     _freq_label = nullptr;
 
     for (int i = 0; i < SSVEP_FREQ_NUM; i++) {

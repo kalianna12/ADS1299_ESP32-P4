@@ -376,9 +376,9 @@ extern "C" void app_main(void)
     ESP_BROOKESIA_CHECK_FALSE_EXIT(s_phone->activateStylesheet(*phone_stylesheet), "Activate phone stylesheet failed");
     assert(s_phone->begin() && "Failed to begin phone");
 
-    PhoneAppSquareline *smart_gadget = new PhoneAppSquareline();
-    assert(smart_gadget != nullptr && "Failed to create phone app squareline");
-    register_app("squareline", s_phone->installApp(smart_gadget));
+    // PhoneAppSquareline *smart_gadget = new PhoneAppSquareline();
+    // assert(smart_gadget != nullptr && "Failed to create phone app squareline");
+    // register_app("squareline", s_phone->installApp(smart_gadget));
 
     Calculator *calculator = new Calculator();
     assert(calculator != nullptr && "Failed to create calculator");
@@ -396,9 +396,9 @@ extern "C" void app_main(void)
     assert(game_2048 != nullptr && "Failed to create game_2048");
     register_app("2048", s_phone->installApp(game_2048));
 
-    Camera *camera = new Camera(1280, 720);
-    assert(camera != nullptr && "Failed to create camera");
-    register_app("camera", s_phone->installApp(camera));
+    // Camera *camera = new Camera(1280, 720);
+    // assert(camera != nullptr && "Failed to create camera");
+    // register_app("camera", s_phone->installApp(camera));
 
 #if ENABLE_CUSTOM_TEST_APP
     TestApp *test_app = new TestApp();
@@ -423,9 +423,15 @@ extern "C" void app_main(void)
         assert(s_apps[i].id >= 0 && "Failed to install app");
     }
 
+    // Auto start SSVEP app
+    const AppRegistryEntry *ssvep_app_entry = find_app_by_name("ssvep");
+    if (ssvep_app_entry != nullptr) {
+        vTaskDelay(pdMS_TO_TICKS(1000)); // Wait 1 second for system to stabilize
+        start_app_by_id(ssvep_app_entry->id);
+    }
+
     esp_lv_adapter_unlock();
 
-    xTaskCreate(status_monitor_task, "status_monitor", 4096, nullptr, 2, nullptr);
 #if ENABLE_AUTO_APP_STRESS
     xTaskCreate(auto_app_stress_task, "auto_app_stress", 4096, nullptr, 2, nullptr);
 #endif
