@@ -10,6 +10,8 @@
 #include "freertos/task.h"
 #include "lvgl.h"
 #include "esp_brookesia.hpp"
+#include "SSVEPSpiSlaveLink.hpp"
+#include <atomic>
 
 typedef enum {
     SSVEP_FREQ_8HZ = 0,
@@ -56,6 +58,8 @@ private:
     TaskHandle_t _update_task;
     bool _task_running;
     bool _is_paused;
+    uint32_t _feedback_packet_count;
+    SSVEPSpiSlaveLink _spi_link;
 
     static constexpr uint32_t UPDATE_PERIOD_MS = 10;
 
@@ -73,15 +77,19 @@ private:
     void setFeedback(ssvep_freq_t detected_freq);
     void clearFeedback(void);
     void resetUiState(void);
+    void destroyUiLocked(void);
+    bool handleIncomingPacket(const SpiResultPacket &packet, bool from_test_button);
 
     static void updateTaskEntry(void *arg);
+    static bool packetCallback(void *ctx, const SpiResultPacket &packet, bool from_test_button);
 
     lv_color_t grayscaleToColor(uint8_t value);
 
     static void testButtonEventHandler(lv_event_t *e);
 
 private:
-    ssvep_freq_t _feedback_freq;
-    uint32_t _feedback_start_time;
+      // 【关键修复 3】：使用 std::atomic 包装跨线程共享变量
+    std::atomic<ssvep_freq_t> _feedback_freq;
+    std::atomic<uint32_t> _feedback_start_time;
     static constexpr uint32_t FEEDBACK_DURATION_MS = 500;
 };

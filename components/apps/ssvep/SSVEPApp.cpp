@@ -12,6 +12,7 @@
 #include "esp_lv_adapter.h"
 
 static const char *TAG = "SSVEPApp";
+static constexpr bool kEnableSpiSlaveLink = true;
 
 static constexpr uint16_t FREQ_HZ[SSVEP_FREQ_NUM] = {
     8, 10, 12, 14
@@ -29,6 +30,7 @@ SSVEPApp::SSVEPApp():
     _update_task(nullptr),
     _task_running(false),
     _is_paused(false),
+    _feedback_packet_count(0),
     _rect_size(300),
     _freq_label(nullptr),
     _feedback_freq(static_cast<ssvep_freq_t>(-1)),
@@ -64,6 +66,7 @@ bool SSVEPApp::run(void)
     resetUiState();
     clearFeedback();
     _is_paused = false;
+    _feedback_packet_count = 0;
 
     lv_obj_t *screen = lv_scr_act();
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x000000), 0);
@@ -101,6 +104,24 @@ bool SSVEPApp::run(void)
         return false;
     }
 
+    if (kEnableSpiSlaveLink) {
+        if (!_spi_link.start(this, &SSVEPApp::packetCallback)) {
+            ESP_LOGE(TAG, "Failed to start SPI slave link");
+            _is_paused = true;
+            _task_running = false;
+            for (int i = 0; (i < 100) && (_update_task != nullptr); i++) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            if (esp_lv_adapter_lock(-1) == ESP_OK) {
+                destroyUiLocked();
+                esp_lv_adapter_unlock();
+            }
+            return false;
+        }
+    } else {
+        ESP_LOGW(TAG, "SPI slave link disabled for isolation test");
+    }
+
     ESP_LOGI(TAG, "SSVEP App UI created successfully");
     return true;
 }
@@ -117,9 +138,17 @@ bool SSVEPApp::close(void)
 
     _is_paused = true;
     _task_running = false;
+    if (kEnableSpiSlaveLink) {
+        _spi_link.stop();
+    }
 
     for (int i = 0; (i < 100) && (_update_task != nullptr); i++) {
         vTaskDelay(pdMS_TO_TICKS(10));
+    }
+
+    if (esp_lv_adapter_lock(-1) == ESP_OK) {
+        destroyUiLocked();
+        esp_lv_adapter_unlock();
     }
 
     clearFeedback();
@@ -276,7 +305,15 @@ void SSVEPApp::testButtonEventHandler(lv_event_t *e)
         return;
     }
 
-    app->setFeedback(static_cast<ssvep_freq_t>(freq_idx));
+    SpiResultPacket packet = {};
+    packet.flags = 0x01;
+    packet.detected_index = static_cast<uint8_t>(freq_idx);
+    packet.detected_hz = FREQ_HZ[freq_idx];
+    packet.confidence = 1.0f;
+    packet.correlations[freq_idx] = 1.0f;
+
+    ESP_LOGI(TAG, "Local test button clicked: %u Hz", FREQ_HZ[freq_idx]);
+    app->handleIncomingPacket(packet, true);
 }
 
 
@@ -360,6 +397,51 @@ void SSVEPApp::updateTaskEntry(void *arg)
     vTaskDelete(nullptr);
 }
 
+bool SSVEPApp::handleIncomingPacket(const SpiResultPacket &packet, bool from_test_button)
+{
+    if (!_task_running || _app_area == nullptr) {
+        ESP_LOGW(TAG, "Ignore packet because SSVEP UI is not active");
+        return false;
+    }
+    if (packet.magic != SPI_RESULT_PACKET_MAGIC) {
+        ESP_LOGW(TAG, "Ignore SPI packet with bad magic: 0x%04x", packet.magic);
+        return false;
+    }
+    if (packet.version != SPI_RESULT_PACKET_VERSION) {
+        ESP_LOGW(TAG, "Ignore SPI packet with bad version: %u", packet.version);
+        return false;
+    }
+    if ((packet.flags & 0x01) == 0) {
+        ESP_LOGW(TAG, "Ignore SPI packet without valid-result flag");
+        return false;
+    }
+    if (packet.detected_index >= SSVEP_FREQ_NUM) {
+        ESP_LOGW(TAG, "Ignore SPI packet with invalid index: %u", packet.detected_index);
+        return false;
+    }
+
+    ++_feedback_packet_count;
+    ESP_LOGI(TAG,
+             "%s packet: idx=%u hz=%u conf=%.3f count=%lu",
+             from_test_button ? "Test" : "SPI",
+             packet.detected_index,
+             packet.detected_hz,
+             packet.confidence,
+             static_cast<unsigned long>(_feedback_packet_count));
+
+    setFeedback(static_cast<ssvep_freq_t>(packet.detected_index));
+    return true;
+}
+
+bool SSVEPApp::packetCallback(void *ctx, const SpiResultPacket &packet, bool from_test_button)
+{
+    auto *app = static_cast<SSVEPApp *>(ctx);
+    if (app == nullptr) {
+        return false;
+    }
+    return app->handleIncomingPacket(packet, from_test_button);
+}
+
 void SSVEPApp::setFeedback(ssvep_freq_t detected_freq)
 {
     if (detected_freq >= SSVEP_FREQ_NUM) {
@@ -390,5 +472,13 @@ void SSVEPApp::resetUiState(void)
         _feedback_rects[i] = nullptr;
         _test_buttons[i] = nullptr;
         _test_button_labels[i] = nullptr;
+    }
+}
+
+void SSVEPApp::destroyUiLocked(void)
+{
+    if (_app_area != nullptr) {
+        lv_obj_del(_app_area);
+        _app_area = nullptr;
     }
 }
