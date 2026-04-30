@@ -91,5 +91,7 @@ private:
       // 【关键修复 3】：使用 std::atomic 包装跨线程共享变量
     std::atomic<ssvep_freq_t> _feedback_freq;
     std::atomic<uint32_t> _feedback_start_time;
-    static constexpr uint32_t FEEDBACK_DURATION_MS = 500;
+    std::atomic<uint32_t> _last_event_time_ms;
+    static constexpr uint32_t FEEDBACK_DURATION_MS = 1000;
+    static constexpr uint32_t EVENT_DEBOUNCE_MS = 1000;
 };

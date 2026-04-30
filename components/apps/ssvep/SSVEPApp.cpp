@@ -34,7 +34,8 @@ SSVEPApp::SSVEPApp():
     _rect_size(300),
     _freq_label(nullptr),
     _feedback_freq(static_cast<ssvep_freq_t>(-1)),
-    _feedback_start_time(0)
+    _feedback_start_time(0),
+    _last_event_time_ms(0)
 {
     std::memset(_freq_tables, 0, sizeof(_freq_tables));
     std::memset(_rects, 0, sizeof(_rects));
@@ -429,7 +430,46 @@ bool SSVEPApp::handleIncomingPacket(const SpiResultPacket &packet, bool from_tes
              packet.confidence,
              static_cast<unsigned long>(_feedback_packet_count));
 
+    uint32_t now_ms = esp_timer_get_time() / 1000;
+uint32_t last_event_ms = _last_event_time_ms.load();
+
+if (from_test_button || (now_ms - last_event_ms >= EVENT_DEBOUNCE_MS)) {
+    _last_event_time_ms.store(now_ms);
+
+    ESP_LOGW(TAG,
+             ">>> EVENT TRIGGERED: %s %u Hz <<<",
+             from_test_button ? "test button" : "debounced SPI result",
+             packet.detected_hz);
+
     setFeedback(static_cast<ssvep_freq_t>(packet.detected_index));
+
+    // TODO: 这里写你的页面跳转 / 按钮事件逻辑
+    switch (packet.detected_index) {
+    case SSVEP_FREQ_8HZ:
+        ESP_LOGW(TAG, "Action for 8Hz");
+        // back();
+        break;
+
+    case SSVEP_FREQ_10HZ:
+        ESP_LOGW(TAG, "Action for 10Hz");
+        break;
+
+    case SSVEP_FREQ_12HZ:
+        ESP_LOGW(TAG, "Action for 12Hz");
+        break;
+
+    case SSVEP_FREQ_14HZ:
+        ESP_LOGW(TAG, "Action for 14Hz");
+        break;
+
+    default:
+        break;
+    }
+} else {
+    ESP_LOGI(TAG, "Burst packet ignored before feedback.");
+}
+
+    
     return true;
 }
 
@@ -457,6 +497,7 @@ void SSVEPApp::clearFeedback(void)
 {
     _feedback_freq = static_cast<ssvep_freq_t>(-1);
     _feedback_start_time = 0;
+    _last_event_time_ms = 0;
 }
 
 void SSVEPApp::resetUiState(void)
