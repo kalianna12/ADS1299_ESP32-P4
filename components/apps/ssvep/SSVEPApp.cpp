@@ -345,9 +345,15 @@ uint8_t SSVEPApp::getGrayscaleValue(ssvep_freq_t freq, uint32_t current_ms)
 
 void SSVEPApp::updateAllRectangles(uint32_t current_ms)
 {
-    if (_feedback_freq < SSVEP_FREQ_NUM) {
-        if (current_ms - _feedback_start_time > FEEDBACK_DURATION_MS) {
-            _feedback_freq = static_cast<ssvep_freq_t>(-1);
+    // 【优化3】：将 atomic 变量一次性读取到局部变量，保证此循环内的状态一致性
+    ssvep_freq_t current_fb_freq = _feedback_freq.load();
+    uint32_t start_time = _feedback_start_time.load();
+
+    if (current_fb_freq < SSVEP_FREQ_NUM) {
+        // 【优化4】：必须判断 current_ms >= start_time，防止多线程时间差导致的无符号整数下溢 BUG
+        if (current_ms >= start_time && (current_ms - start_time > FEEDBACK_DURATION_MS)) {
+            _feedback_freq.store(static_cast<ssvep_freq_t>(-1));
+            current_fb_freq = static_cast<ssvep_freq_t>(-1); // 更新局部变量
         }
     }
 
@@ -359,9 +365,10 @@ void SSVEPApp::updateAllRectangles(uint32_t current_ms)
         uint8_t gray_val = getGrayscaleValue(_rects[i].freq, current_ms);
         lv_obj_set_style_bg_color(_rects[i].rect, grayscaleToColor(gray_val), 0);
 
-        if (_feedback_freq == _rects[i].freq) {
+        // 使用一致的局部变量进行比较
+        if (current_fb_freq == _rects[i].freq) {
             lv_obj_set_style_border_color(_rects[i].rect, lv_color_hex(0x00ff00), 0);
-            lv_obj_set_style_border_width(_rects[i].rect, 4, 0);
+            lv_obj_set_style_border_width(_rects[i].rect, 6, 0); // 建议改为6，视觉反馈更明显
         } else {
             lv_obj_set_style_border_color(_rects[i].rect, lv_color_hex(0x666666), 0);
             lv_obj_set_style_border_width(_rects[i].rect, 2, 0);
@@ -431,44 +438,42 @@ bool SSVEPApp::handleIncomingPacket(const SpiResultPacket &packet, bool from_tes
              static_cast<unsigned long>(_feedback_packet_count));
 
     uint32_t now_ms = esp_timer_get_time() / 1000;
-uint32_t last_event_ms = _last_event_time_ms.load();
+    uint32_t last_event_ms = _last_event_time_ms.load();
 
-if (from_test_button || (now_ms - last_event_ms >= EVENT_DEBOUNCE_MS)) {
-    _last_event_time_ms.store(now_ms);
-
-    ESP_LOGW(TAG,
-             ">>> EVENT TRIGGERED: %s %u Hz <<<",
-             from_test_button ? "test button" : "debounced SPI result",
-             packet.detected_hz);
-
+    // 【优化1】：只要收到有效包，就刷新UI高亮时间，保证只要盯着看，绿框就一直亮着
     setFeedback(static_cast<ssvep_freq_t>(packet.detected_index));
 
-    // TODO: 这里写你的页面跳转 / 按钮事件逻辑
-    switch (packet.detected_index) {
-    case SSVEP_FREQ_8HZ:
-        ESP_LOGW(TAG, "Action for 8Hz");
-        // back();
-        break;
+    // 【优化2】：实际的动作（页面跳转等）依然走防抖逻辑，防止疯狂触发
+    if (from_test_button || (now_ms - last_event_ms >= EVENT_DEBOUNCE_MS)) {
+        _last_event_time_ms.store(now_ms);
 
-    case SSVEP_FREQ_10HZ:
-        ESP_LOGW(TAG, "Action for 10Hz");
-        break;
+        ESP_LOGW(TAG,
+                 ">>> EVENT TRIGGERED: %s %u Hz <<<",
+                 from_test_button ? "test button" : "debounced SPI result",
+                 packet.detected_hz);
 
-    case SSVEP_FREQ_12HZ:
-        ESP_LOGW(TAG, "Action for 12Hz");
-        break;
-
-    case SSVEP_FREQ_14HZ:
-        ESP_LOGW(TAG, "Action for 14Hz");
-        break;
-
-    default:
-        break;
+        // TODO: 这里写你的页面跳转 / 按钮事件逻辑
+        switch (packet.detected_index) {
+        case SSVEP_FREQ_8HZ:
+            ESP_LOGW(TAG, "Action for 8Hz");
+            // back();
+            break;
+        case SSVEP_FREQ_10HZ:
+            ESP_LOGW(TAG, "Action for 10Hz");
+            break;
+        case SSVEP_FREQ_12HZ:
+            ESP_LOGW(TAG, "Action for 12Hz");
+            break;
+        case SSVEP_FREQ_14HZ:
+            ESP_LOGW(TAG, "Action for 14Hz");
+            break;
+        default:
+            break;
+        }
+    } else {
+        // 取消这里的日志，防止刷屏
+        // ESP_LOGI(TAG, "Burst packet ignored before feedback.");
     }
-} else {
-    ESP_LOGI(TAG, "Burst packet ignored before feedback.");
-}
-
     
     return true;
 }
