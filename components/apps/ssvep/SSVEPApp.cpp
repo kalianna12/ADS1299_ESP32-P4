@@ -10,6 +10,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lv_adapter.h"
+#include "assets/img_app_ssvep.c"
 
 static const char *TAG = "SSVEPApp";
 static constexpr bool kEnableSpiSlaveLink = true;
@@ -25,7 +26,7 @@ static constexpr uint16_t FREQ_PERIOD_MS[SSVEP_FREQ_NUM] = {
 static constexpr uint16_t GRAYSCALE_TABLE_SIZE = 64;
 
 SSVEPApp::SSVEPApp():
-    ESP_Brookesia_PhoneApp("SSVEP", nullptr, true),
+    ESP_Brookesia_PhoneApp("SSVEP", &img_app_ssvep, true),
     _app_area(nullptr),
     _update_task(nullptr),
     _task_running(false),
