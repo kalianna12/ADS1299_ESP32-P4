@@ -17,7 +17,7 @@
 namespace {
 
 constexpr char TAG[] = "SSVEPSpiLink";
-constexpr spi_host_device_t SPI_RX_HOST = SPI2_HOST;
+constexpr spi_host_device_t SPI_RX_HOST = SPI3_HOST;
 constexpr gpio_num_t SPI_RX_MOSI = GPIO_NUM_21;
 constexpr gpio_num_t SPI_RX_MISO = GPIO_NUM_22;
 constexpr gpio_num_t SPI_RX_SCLK = GPIO_NUM_23;

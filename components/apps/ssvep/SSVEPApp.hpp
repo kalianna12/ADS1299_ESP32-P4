@@ -11,6 +11,7 @@
 #include "lvgl.h"
 #include "esp_brookesia.hpp"
 #include "SSVEPSpiSlaveLink.hpp"
+#include "ui/ui.h"
 #include <atomic>
 
 typedef enum {
@@ -51,6 +52,7 @@ private:
     ssvep_freq_table_t _freq_tables[SSVEP_FREQ_NUM];
     ssvep_rect_t _rects[SSVEP_FREQ_NUM];
     lv_obj_t *_app_area;
+    SSVEPPanelUi _panel_ui;
 
     lv_obj_t *_feedback_rects[SSVEP_FREQ_NUM];
     lv_obj_t *_test_buttons[SSVEP_FREQ_NUM];

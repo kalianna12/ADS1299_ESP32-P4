@@ -88,6 +88,7 @@ bool SSVEPApp::run(void)
 
     createRectangles(_app_area);
     createTestButtons(_app_area);
+    _panel_ui.create(_app_area);
 
     _task_running = true;
     BaseType_t task_ret = xTaskCreatePinnedToCore(
@@ -457,16 +458,39 @@ bool SSVEPApp::handleIncomingPacket(const SpiResultPacket &packet, bool from_tes
         switch (packet.detected_index) {
         case SSVEP_FREQ_8HZ:
             ESP_LOGW(TAG, "Action for 8Hz");
-            // back();
+            if (from_test_button) {
+                _panel_ui.triggerByIndex(0);
+            } else if (esp_lv_adapter_lock(-1) == ESP_OK) {
+                _panel_ui.triggerByIndex(0);
+                esp_lv_adapter_unlock();
+            }
             break;
         case SSVEP_FREQ_10HZ:
             ESP_LOGW(TAG, "Action for 10Hz");
+            if (from_test_button) {
+                _panel_ui.triggerByIndex(1);
+            } else if (esp_lv_adapter_lock(-1) == ESP_OK) {
+                _panel_ui.triggerByIndex(1);
+                esp_lv_adapter_unlock();
+            }
             break;
         case SSVEP_FREQ_12HZ:
             ESP_LOGW(TAG, "Action for 12Hz");
+            if (from_test_button) {
+                _panel_ui.triggerByIndex(2);
+            } else if (esp_lv_adapter_lock(-1) == ESP_OK) {
+                _panel_ui.triggerByIndex(2);
+                esp_lv_adapter_unlock();
+            }
             break;
         case SSVEP_FREQ_14HZ:
             ESP_LOGW(TAG, "Action for 14Hz");
+            if (from_test_button) {
+                _panel_ui.triggerByIndex(3);
+            } else if (esp_lv_adapter_lock(-1) == ESP_OK) {
+                _panel_ui.triggerByIndex(3);
+                esp_lv_adapter_unlock();
+            }
             break;
         default:
             break;
@@ -509,6 +533,7 @@ void SSVEPApp::clearFeedback(void)
 void SSVEPApp::resetUiState(void)
 {
     _app_area = nullptr;
+    _panel_ui.destroy();
     _freq_label = nullptr;
 
     for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
@@ -524,6 +549,8 @@ void SSVEPApp::resetUiState(void)
 
 void SSVEPApp::destroyUiLocked(void)
 {
+    _panel_ui.destroy();
+
     if (_app_area != nullptr) {
         lv_obj_del(_app_area);
         _app_area = nullptr;
