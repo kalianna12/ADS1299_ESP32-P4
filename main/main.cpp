@@ -372,6 +372,9 @@ extern "C" void app_main(void)
     ESP_Brookesia_PhoneStylesheet_t *phone_stylesheet =
         new ESP_Brookesia_PhoneStylesheet_t ESP_BROOKESIA_PHONE_1024_600_DARK_STYLESHEET();
     ESP_BROOKESIA_CHECK_NULL_EXIT(phone_stylesheet, "Create phone stylesheet failed");
+    phone_stylesheet->manager.flags.enable_gesture_navigation_back = 1;
+    phone_stylesheet->manager.gesture.flags.enable_indicator_bars[ESP_BROOKESIA_GESTURE_INDICATOR_BAR_TYPE_LEFT] = 1;
+    phone_stylesheet->manager.gesture.flags.enable_indicator_bars[ESP_BROOKESIA_GESTURE_INDICATOR_BAR_TYPE_RIGHT] = 1;
     ESP_BROOKESIA_CHECK_FALSE_EXIT(s_phone->addStylesheet(*phone_stylesheet), "Add phone stylesheet failed");
     ESP_BROOKESIA_CHECK_FALSE_EXIT(s_phone->activateStylesheet(*phone_stylesheet), "Activate phone stylesheet failed");
     assert(s_phone->begin() && "Failed to begin phone");
