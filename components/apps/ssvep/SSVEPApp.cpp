@@ -84,7 +84,7 @@ bool SSVEPApp::run(void)
     lv_obj_set_style_pad_all(_app_area, 0, 0);
     lv_obj_clear_flag(_app_area, LV_OBJ_FLAG_SCROLLABLE);
 
-    _rect_size = 180;
+    _rect_size = 170;
 
     createRectangles(_app_area);
     createTestButtons(_app_area);
@@ -206,10 +206,10 @@ void SSVEPApp::createRectangles(lv_obj_t *parent)
         int16_t y_ofs;
         ssvep_freq_t freq;
     } corner_config[SSVEP_FREQ_NUM] = {
-        {LV_ALIGN_TOP_MID, 0, 0, SSVEP_FREQ_8HZ},       // Top
-        {LV_ALIGN_BOTTOM_MID, 0, -10, SSVEP_FREQ_10HZ}, // Bottom
-        {LV_ALIGN_LEFT_MID, 10, 0, SSVEP_FREQ_12HZ},    // Left
-        {LV_ALIGN_RIGHT_MID, -10, 0, SSVEP_FREQ_14HZ}   // Right
+         {LV_ALIGN_TOP_LEFT, 10, 10, SSVEP_FREQ_8HZ},       // 左上
+         {LV_ALIGN_TOP_RIGHT, -10, 10, SSVEP_FREQ_10HZ},    // 右上
+         {LV_ALIGN_BOTTOM_LEFT, 10, -10, SSVEP_FREQ_12HZ},  // 左下
+         {LV_ALIGN_BOTTOM_RIGHT, -10, -10, SSVEP_FREQ_14HZ} // 右下
     };
 
     uint32_t current_ms = esp_timer_get_time() / 1000;
@@ -266,15 +266,15 @@ void SSVEPApp::createTestButtons(lv_obj_t *parent)
         int16_t x_ofs;
         int16_t y_ofs;
     } button_positions[SSVEP_FREQ_NUM] = {
-        {LV_ALIGN_TOP_MID, 0, static_cast<int16_t>(10 + _rect_size + 10)},      // Top
-        {LV_ALIGN_BOTTOM_MID, 0, static_cast<int16_t>(-10 - _rect_size - 10)},  // Bottom
-        {LV_ALIGN_LEFT_MID, static_cast<int16_t>(10 + _rect_size + 10), 0},     // Left
-        {LV_ALIGN_RIGHT_MID, static_cast<int16_t>(-10 - _rect_size - 10), 0}    // Right
+        {LV_ALIGN_TOP_LEFT, 60, 200},        // 左上方块下面
+        {LV_ALIGN_TOP_RIGHT, -60, 200},      // 右上方块下面
+        {LV_ALIGN_BOTTOM_LEFT, 60, -200},    // 左下方块上面
+        {LV_ALIGN_BOTTOM_RIGHT, -60, -200}   // 右下方块上面
     };
 
     for (int i = 0; i < SSVEP_FREQ_NUM; i++) {
         _test_buttons[i] = lv_btn_create(parent);
-        lv_obj_set_size(_test_buttons[i], 80, 40);
+        lv_obj_set_size(_test_buttons[i], 60, 30);
 
         lv_obj_align(_test_buttons[i], button_positions[i].align, button_positions[i].x_ofs, button_positions[i].y_ofs);
         lv_obj_set_style_bg_color(_test_buttons[i], button_colors[i], 0);
