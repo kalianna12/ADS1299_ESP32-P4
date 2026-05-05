@@ -60,6 +60,7 @@ private:
     TaskHandle_t _update_task;
     bool _task_running;
     bool _is_paused;
+    std::atomic<bool> _ssvep_running;
     uint32_t _feedback_packet_count;
     SSVEPSpiSlaveLink _spi_link;
 
@@ -84,6 +85,7 @@ private:
 
     static void updateTaskEntry(void *arg);
     static bool packetCallback(void *ctx, const SpiResultPacket &packet, bool from_test_button);
+    static void ssvepRunningChangedCallback(bool running, void *user_data);
 
     lv_color_t grayscaleToColor(uint8_t value);
 

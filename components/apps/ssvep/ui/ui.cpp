@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "ui.h"
+#include <cstdio>
 #include "esp_log.h"
 
 extern "C" {
@@ -11,6 +12,11 @@ extern "C" {
     extern const lv_img_dsc_t rest_icon;
     extern const lv_img_dsc_t live_icon;
     extern const lv_img_dsc_t back_icon;
+    extern const lv_img_dsc_t wrong_icon;
+    extern const lv_img_dsc_t ok_icon;
+    extern const lv_img_dsc_t status_icon;
+    extern const lv_img_dsc_t last_icon;
+    extern const lv_img_dsc_t conf_icon;
 }
 
 static const char *TAG = "SSVEPPanelUi";
@@ -62,11 +68,24 @@ SSVEPPanelUi::SSVEPPanelUi():
     _icons{nullptr, nullptr, nullptr, nullptr},
     _labels{nullptr, nullptr, nullptr, nullptr},
     _freq_labels{nullptr, nullptr, nullptr, nullptr},
+    _status_bar(nullptr),
+    _status_items{nullptr, nullptr, nullptr, nullptr},
+    _status_icons{nullptr, nullptr, nullptr, nullptr},
+    _status_labels{nullptr, nullptr, nullptr, nullptr},
+    _status_separators{nullptr, nullptr, nullptr},
+    _system_check_timer(nullptr),
     _current_page(Page::MAIN),
     _previous_page(Page::MAIN),
+    _system_status(SystemStatus::WRONG),
+    _system_checking(false),
+    _ssvep_running(true),
     _action_cb(nullptr),
-    _action_user_data(nullptr)
+    _action_user_data(nullptr),
+    _ssvep_running_cb(nullptr),
+    _ssvep_running_user_data(nullptr)
 {
+    std::snprintf(_last_action, sizeof(_last_action), "%s", "--");
+    std::snprintf(_conf_value, sizeof(_conf_value), "%s", "--");
 }
 
 bool SSVEPPanelUi::create(lv_obj_t *parent)
@@ -82,7 +101,7 @@ bool SSVEPPanelUi::create(lv_obj_t *parent)
 
     _panel = lv_obj_create(parent);
     lv_obj_set_size(_panel, kPanelWidth, kPanelHeight);
-    lv_obj_align(_panel, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_align(_panel, LV_ALIGN_CENTER, 0, -10);
 
     lv_obj_set_style_bg_color(_panel, lv_color_hex(0x0B1730), 0);
     lv_obj_set_style_bg_opa(_panel, LV_OPA_90, 0);
@@ -102,6 +121,7 @@ bool SSVEPPanelUi::create(lv_obj_t *parent)
     lv_obj_set_scrollbar_mode(_panel, LV_SCROLLBAR_MODE_OFF);
 
     showMainPage();
+    startSystemWearCheck();
 
     ESP_LOGI(TAG, "Panel created (%dx%d)", kPanelWidth, kPanelHeight);
     return true;
@@ -109,6 +129,11 @@ bool SSVEPPanelUi::create(lv_obj_t *parent)
 
 void SSVEPPanelUi::destroy()
 {
+    if (_system_check_timer != nullptr) {
+        lv_timer_del(_system_check_timer);
+        _system_check_timer = nullptr;
+    }
+
     if (_panel != nullptr) {
         lv_obj_del(_panel);
         _panel = nullptr;
@@ -124,8 +149,23 @@ void SSVEPPanelUi::destroy()
         _freq_labels[i] = nullptr;
     }
 
+    _status_bar = nullptr;
+    for (uint8_t i = 0; i < kStatusItemCount; i++) {
+        _status_items[i] = nullptr;
+        _status_icons[i] = nullptr;
+        _status_labels[i] = nullptr;
+    }
+    for (uint8_t i = 0; i < kStatusItemCount - 1; i++) {
+        _status_separators[i] = nullptr;
+    }
+
     _current_page  = Page::MAIN;
     _previous_page = Page::MAIN;
+    _system_status = SystemStatus::WRONG;
+    _system_checking = false;
+    _ssvep_running = true;
+    std::snprintf(_last_action, sizeof(_last_action), "%s", "--");
+    std::snprintf(_conf_value, sizeof(_conf_value), "%s", "--");
 }
 
 void SSVEPPanelUi::showMainPage()
@@ -139,6 +179,7 @@ void SSVEPPanelUi::showMainPage()
 
     clearPanelContent();
     createMainTiles();
+    createStatusBar();
 }
 
 void SSVEPPanelUi::showRestPage()
@@ -153,6 +194,7 @@ void SSVEPPanelUi::showRestPage()
     clearPanelContent();
     createPageHeader("ROOM CONTROL", "Coming soon");
     createBackTileOnly();
+    createStatusBar();
 }
 
 void SSVEPPanelUi::showLivePage()
@@ -167,6 +209,7 @@ void SSVEPPanelUi::showLivePage()
     clearPanelContent();
     createPageHeader("LIFE SERVICE", "Coming soon");
     createBackTileOnly();
+    createStatusBar();
 }
 
 void SSVEPPanelUi::goBack()
@@ -183,6 +226,46 @@ void SSVEPPanelUi::setActionCallback(ActionCallback cb, void *user_data)
 {
     _action_cb        = cb;
     _action_user_data = user_data;
+}
+
+void SSVEPPanelUi::setSsvepRunningCallback(SsvepRunningCallback cb, void *user_data)
+{
+    _ssvep_running_cb = cb;
+    _ssvep_running_user_data = user_data;
+}
+
+void SSVEPPanelUi::updateLastAction(const char *action_name)
+{
+    if ((action_name == nullptr) || (action_name[0] == '\0')) {
+        std::snprintf(_last_action, sizeof(_last_action), "%s", "--");
+    } else if (action_name != _last_action) {
+        std::snprintf(_last_action, sizeof(_last_action), "%s", action_name);
+    }
+
+    if (_status_labels[static_cast<uint8_t>(StatusItem::LAST)] != nullptr) {
+        lv_label_set_text_fmt(_status_labels[static_cast<uint8_t>(StatusItem::LAST)], "LAST: %s", _last_action);
+    }
+}
+
+void SSVEPPanelUi::updateConfValue(float conf)
+{
+    std::snprintf(_conf_value, sizeof(_conf_value), "%.2f", static_cast<double>(conf));
+    if (_status_labels[static_cast<uint8_t>(StatusItem::CONF)] != nullptr) {
+        lv_label_set_text_fmt(_status_labels[static_cast<uint8_t>(StatusItem::CONF)], "CONF: %s", _conf_value);
+    }
+}
+
+void SSVEPPanelUi::updateConfValue(const char *conf)
+{
+    if ((conf == nullptr) || (conf[0] == '\0')) {
+        std::snprintf(_conf_value, sizeof(_conf_value), "%s", "--");
+    } else if (conf != _conf_value) {
+        std::snprintf(_conf_value, sizeof(_conf_value), "%s", conf);
+    }
+
+    if (_status_labels[static_cast<uint8_t>(StatusItem::CONF)] != nullptr) {
+        lv_label_set_text_fmt(_status_labels[static_cast<uint8_t>(StatusItem::CONF)], "CONF: %s", _conf_value);
+    }
 }
 
 void SSVEPPanelUi::triggerByIndex(uint8_t index)
@@ -210,6 +293,15 @@ void SSVEPPanelUi::clearPanelContent()
         _icons[i]       = nullptr;
         _labels[i]      = nullptr;
         _freq_labels[i] = nullptr;
+    }
+    _status_bar = nullptr;
+    for (uint8_t i = 0; i < kStatusItemCount; i++) {
+        _status_items[i] = nullptr;
+        _status_icons[i] = nullptr;
+        _status_labels[i] = nullptr;
+    }
+    for (uint8_t i = 0; i < kStatusItemCount - 1; i++) {
+        _status_separators[i] = nullptr;
     }
 }
 
@@ -246,6 +338,195 @@ void SSVEPPanelUi::createPageHeader(const char *title, const char *subtitle)
     lv_obj_set_style_text_font(sub_lbl, &lv_font_montserrat_14, 0);
     lv_obj_align(sub_lbl, LV_ALIGN_TOP_MID, 0, 98);
     makeChildPassThrough(sub_lbl);
+}
+
+void SSVEPPanelUi::createStatusBar()
+{
+    if (_panel == nullptr) {
+        return;
+    }
+
+    _status_bar = lv_obj_create(_panel);
+    lv_obj_remove_style_all(_status_bar);
+    lv_obj_set_size(_status_bar, kStatusBarW, kStatusBarH);
+    lv_obj_align(_status_bar, LV_ALIGN_TOP_MID, 0, kStatusBarY);
+    lv_obj_set_style_radius(_status_bar, 10, 0);
+    lv_obj_set_style_clip_corner(_status_bar, true, 0);
+    lv_obj_set_style_bg_color(_status_bar, lv_color_hex(0x061225), 0);
+    lv_obj_set_style_bg_opa(_status_bar, LV_OPA_80, 0);
+    lv_obj_set_style_border_width(_status_bar, 1, 0);
+    lv_obj_set_style_border_color(_status_bar, lv_color_hex(0x38BDF8), 0);
+    lv_obj_set_style_border_opa(_status_bar, LV_OPA_60, 0);
+    lv_obj_set_style_shadow_width(_status_bar, 8, 0);
+    lv_obj_set_style_shadow_color(_status_bar, lv_color_hex(0x38BDF8), 0);
+    lv_obj_set_style_shadow_opa(_status_bar, LV_OPA_20, 0);
+    lv_obj_clear_flag(_status_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(_status_bar, LV_SCROLLBAR_MODE_OFF);
+
+    createStatusItem(static_cast<uint8_t>(StatusItem::SYSTEM), &wrong_icon, "SYSTEM test...");
+    createStatusItem(static_cast<uint8_t>(StatusItem::SSVEP), &status_icon, "SSVEP RUNNING");
+    createStatusItem(static_cast<uint8_t>(StatusItem::LAST), &last_icon, "LAST: --");
+    createStatusItem(static_cast<uint8_t>(StatusItem::CONF), &conf_icon, "CONF: --");
+
+    const uint16_t item_w = kStatusBarW / kStatusItemCount;
+    for (uint8_t i = 0; i < kStatusItemCount - 1; i++) {
+        _status_separators[i] = lv_obj_create(_status_bar);
+        lv_obj_remove_style_all(_status_separators[i]);
+        lv_obj_set_size(_status_separators[i], 1, kStatusBarH - 16);
+        lv_obj_set_pos(_status_separators[i], item_w * (i + 1), 8);
+        lv_obj_set_style_bg_color(_status_separators[i], lv_color_hex(0x7DD3FC), 0);
+        lv_obj_set_style_bg_opa(_status_separators[i], LV_OPA_50, 0);
+        lv_obj_clear_flag(_status_separators[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(_status_separators[i], LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    updateSystemStatusView();
+    updateSsvepStatusView();
+    updateLastAction(_last_action);
+    updateConfValue(_conf_value);
+}
+
+lv_obj_t *SSVEPPanelUi::createStatusItem(uint8_t index, const lv_img_dsc_t *icon_src, const char *text)
+{
+    if ((_status_bar == nullptr) || (index >= kStatusItemCount)) {
+        return nullptr;
+    }
+
+    const uint16_t item_w = kStatusBarW / kStatusItemCount;
+
+    lv_obj_t *item = lv_obj_create(_status_bar);
+    lv_obj_remove_style_all(item);
+    lv_obj_set_size(item, item_w, kStatusBarH);
+    lv_obj_set_pos(item, item_w * index, 0);
+    lv_obj_set_style_bg_opa(item, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(item, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(item, LV_SCROLLBAR_MODE_OFF);
+
+    if (index == static_cast<uint8_t>(StatusItem::SYSTEM)) {
+        lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(item, systemStatusEventHandler, LV_EVENT_CLICKED, this);
+    } else if (index == static_cast<uint8_t>(StatusItem::SSVEP)) {
+        lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(item, ssvepStatusEventHandler, LV_EVENT_CLICKED, this);
+    } else {
+        lv_obj_clear_flag(item, LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    lv_obj_t *icon = lv_img_create(item);
+    setStatusIcon(icon, icon_src);
+    lv_obj_set_size(icon, kStatusIconSize, kStatusIconSize);
+    lv_obj_align(icon, LV_ALIGN_LEFT_MID, 8, 0);
+    makeChildPassThrough(icon);
+
+    lv_obj_t *label = lv_label_create(item);
+    lv_label_set_text(label, text);
+    lv_obj_set_width(label, item_w - 48);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xDFF6FF), 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_align(label, LV_ALIGN_LEFT_MID, 44, 0);
+    makeChildPassThrough(label);
+
+    _status_items[index] = item;
+    _status_icons[index] = icon;
+    _status_labels[index] = label;
+
+    return item;
+}
+
+void SSVEPPanelUi::setStatusIcon(lv_obj_t *icon, const lv_img_dsc_t *icon_src)
+{
+    if ((icon == nullptr) || (icon_src == nullptr)) {
+        return;
+    }
+
+    lv_img_set_src(icon, icon_src);
+    lv_img_set_pivot(icon, 0, 0);
+
+    const uint32_t src_w = icon_src->header.w;
+    const uint32_t src_h = icon_src->header.h;
+    if ((src_w > 0) && (src_h > 0)) {
+        uint32_t zoom_w = (kStatusIconSize * 256U) / src_w;
+        uint32_t zoom_h = (kStatusIconSize * 256U) / src_h;
+        uint32_t zoom = (zoom_w < zoom_h) ? zoom_w : zoom_h;
+        if (zoom == 0) {
+            zoom = 1;
+        }
+        lv_img_set_zoom(icon, static_cast<uint16_t>(zoom));
+    }
+}
+
+void SSVEPPanelUi::startSystemWearCheck()
+{
+    _system_checking = true;
+    setSystemStatus(SystemStatus::CHECKING);
+
+    if (_system_check_timer != nullptr) {
+        lv_timer_del(_system_check_timer);
+        _system_check_timer = nullptr;
+    }
+
+    _system_check_timer = lv_timer_create(systemCheckTimerHandler, kSystemCheckMs, this);
+    if (_system_check_timer != nullptr) {
+        lv_timer_set_repeat_count(_system_check_timer, 1);
+    }
+}
+
+bool SSVEPPanelUi::checkSystemWearStatus()
+{
+    return true;
+}
+
+void SSVEPPanelUi::setSystemStatus(SystemStatus status)
+{
+    _system_status = status;
+    _system_checking = (status == SystemStatus::CHECKING);
+    updateSystemStatusView();
+}
+
+void SSVEPPanelUi::updateSystemStatusView()
+{
+    lv_obj_t *icon = _status_icons[static_cast<uint8_t>(StatusItem::SYSTEM)];
+    lv_obj_t *label = _status_labels[static_cast<uint8_t>(StatusItem::SYSTEM)];
+    if ((icon == nullptr) || (label == nullptr)) {
+        return;
+    }
+
+    switch (_system_status) {
+    case SystemStatus::CHECKING:
+        setStatusIcon(icon, &wrong_icon);
+        lv_label_set_text(label, "SYSTEM test...");
+        break;
+    case SystemStatus::OK:
+        setStatusIcon(icon, &ok_icon);
+        lv_label_set_text(label, "SYSTEM OK");
+        break;
+    case SystemStatus::WRONG:
+    default:
+        setStatusIcon(icon, &wrong_icon);
+        lv_label_set_text(label, "SYSTEM WRONG");
+        break;
+    }
+}
+
+void SSVEPPanelUi::updateSsvepStatusView()
+{
+    lv_obj_t *icon = _status_icons[static_cast<uint8_t>(StatusItem::SSVEP)];
+    lv_obj_t *label = _status_labels[static_cast<uint8_t>(StatusItem::SSVEP)];
+    if ((icon == nullptr) || (label == nullptr)) {
+        return;
+    }
+
+    setStatusIcon(icon, &status_icon);
+    lv_label_set_text(label, _ssvep_running ? "SSVEP RUNNING" : "SSVEP STOP");
+}
+
+void SSVEPPanelUi::notifySsvepRunningChanged()
+{
+    if (_ssvep_running_cb != nullptr) {
+        _ssvep_running_cb(_ssvep_running, _ssvep_running_user_data);
+    }
 }
 
 lv_obj_t *SSVEPPanelUi::createTile(uint8_t index, int16_t x, int16_t y)
@@ -358,20 +639,24 @@ void SSVEPPanelUi::handleTile(uint8_t index)
     switch (index) {
     case 0:
         ESP_LOGI(TAG, "Call nurse triggered");
+        updateLastAction(kTileTitles[0]);
         notifyAction(0);
         break;
 
     case 1:
         ESP_LOGI(TAG, "Room control triggered");
+        updateLastAction(kTileTitles[1]);
         showRestPage();
         break;
 
     case 2:
         ESP_LOGI(TAG, "Life service triggered");
+        updateLastAction(kTileTitles[2]);
         showLivePage();
         break;
 
     case 3:
+        updateLastAction(kTileTitles[3]);
         if (_current_page == Page::MAIN) {
             ESP_LOGI(TAG, "Back from main");
             notifyAction(3);
@@ -417,4 +702,49 @@ void SSVEPPanelUi::tileEventHandler(lv_event_t *e)
     }
 
     ui->handleTile(static_cast<uint8_t>(index));
+}
+
+void SSVEPPanelUi::systemStatusEventHandler(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    SSVEPPanelUi *ui = static_cast<SSVEPPanelUi *>(lv_event_get_user_data(e));
+    if (ui == nullptr) {
+        return;
+    }
+
+    ui->startSystemWearCheck();
+}
+
+void SSVEPPanelUi::ssvepStatusEventHandler(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+
+    SSVEPPanelUi *ui = static_cast<SSVEPPanelUi *>(lv_event_get_user_data(e));
+    if (ui == nullptr) {
+        return;
+    }
+
+    ui->_ssvep_running = !ui->_ssvep_running;
+    ui->updateSsvepStatusView();
+    ui->notifySsvepRunningChanged();
+}
+
+void SSVEPPanelUi::systemCheckTimerHandler(lv_timer_t *timer)
+{
+    if (timer == nullptr) {
+        return;
+    }
+
+    SSVEPPanelUi *ui = static_cast<SSVEPPanelUi *>(timer->user_data);
+    if (ui == nullptr) {
+        return;
+    }
+
+    ui->_system_check_timer = nullptr;
+    ui->setSystemStatus(ui->checkSystemWearStatus() ? SystemStatus::OK : SystemStatus::WRONG);
 }

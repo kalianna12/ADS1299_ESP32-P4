@@ -31,6 +31,7 @@ SSVEPApp::SSVEPApp():
     _update_task(nullptr),
     _task_running(false),
     _is_paused(false),
+    _ssvep_running(true),
     _feedback_packet_count(0),
     _rect_size(300),
     _freq_label(nullptr),
@@ -68,6 +69,7 @@ bool SSVEPApp::run(void)
     resetUiState();
     clearFeedback();
     _is_paused = false;
+    _ssvep_running = true;
     _feedback_packet_count = 0;
 
     lv_obj_t *screen = lv_scr_act();
@@ -88,6 +90,7 @@ bool SSVEPApp::run(void)
 
     createRectangles(_app_area);
     createTestButtons(_app_area);
+    _panel_ui.setSsvepRunningCallback(ssvepRunningChangedCallback, this);
     _panel_ui.create(_app_area);
 
     _task_running = true;
@@ -392,7 +395,7 @@ void SSVEPApp::updateTaskEntry(void *arg)
     ESP_LOGI(TAG, "Update task started");
 
     while (app->_task_running) {
-        if (!app->_is_paused) {
+        if (!app->_is_paused && app->_ssvep_running.load()) {
             uint32_t current_ms = esp_timer_get_time() / 1000;
             if (esp_lv_adapter_lock(-1) == ESP_OK) {
                 app->updateAllRectangles(current_ms);
@@ -438,6 +441,13 @@ bool SSVEPApp::handleIncomingPacket(const SpiResultPacket &packet, bool from_tes
              packet.detected_hz,
              packet.confidence,
              static_cast<unsigned long>(_feedback_packet_count));
+
+    if (from_test_button) {
+        _panel_ui.updateConfValue(packet.confidence);
+    } else if (esp_lv_adapter_lock(-1) == ESP_OK) {
+        _panel_ui.updateConfValue(packet.confidence);
+        esp_lv_adapter_unlock();
+    }
 
     uint32_t now_ms = esp_timer_get_time() / 1000;
     uint32_t last_event_ms = _last_event_time_ms.load();
@@ -510,6 +520,17 @@ bool SSVEPApp::packetCallback(void *ctx, const SpiResultPacket &packet, bool fro
         return false;
     }
     return app->handleIncomingPacket(packet, from_test_button);
+}
+
+void SSVEPApp::ssvepRunningChangedCallback(bool running, void *user_data)
+{
+    SSVEPApp *app = static_cast<SSVEPApp *>(user_data);
+    if (app == nullptr) {
+        return;
+    }
+
+    app->_ssvep_running = running;
+    ESP_LOGI(TAG, "SSVEP flashing %s", running ? "running" : "stopped");
 }
 
 void SSVEPApp::setFeedback(ssvep_freq_t detected_freq)
